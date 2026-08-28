@@ -1,0 +1,29 @@
+# Environment / secrets
+.env
+*.env
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local database
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite3
+
+# Tooling installed locally by setup scripts
+tools/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

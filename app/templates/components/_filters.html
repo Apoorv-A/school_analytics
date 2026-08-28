@@ -1,0 +1,108 @@
+{# Filter bar. Only the filters a page lists in `visible_filters` are rendered, and
+   every option set has already been narrowed to this user's access scope. #}
+<form class="filters" data-filters method="get" action="">
+  <div class="filters__row">
+    {% if "academic_year" in visible_filters and filter_options.academic_years|length > 1 %}
+      <div class="filter">
+        <label for="f-year">Academic year</label>
+        <select id="f-year" data-filter="academic_year_id">
+          {% for option in filter_options.academic_years %}
+            <option value="{{ option.id }}" {% if filters.academic_year_id == option.id %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
+
+    {% if "student" in visible_filters and filter_options.students|length > 1 %}
+      <div class="filter filter--wide">
+        <label for="f-student">Student</label>
+        <select id="f-student" data-filter="student_id">
+          {% if current_user.role.value in ("admin", "teacher") %}
+            <option value="">Select a student</option>
+          {% endif %}
+          {% for option in filter_options.students %}
+            <option value="{{ option.id }}" {% if filters.student_id == option.id %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
+
+    {% if "term" in visible_filters %}
+      <div class="filter">
+        <label for="f-term">Term</label>
+        <select id="f-term" data-filter="term_id">
+          <option value="">Full year</option>
+          {% for option in filter_options.terms %}
+            <option value="{{ option.id }}" {% if filters.term_id == option.id %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
+
+    {% if "subject" in visible_filters %}
+      <div class="filter">
+        <label for="f-subject">Subject</label>
+        <select id="f-subject" data-filter="subject_id">
+          <option value="">All subjects</option>
+          {% for option in filter_options.subjects %}
+            <option value="{{ option.id }}" {% if filters.subject_id == option.id %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
+
+    {% if "grade" in visible_filters %}
+      <div class="filter">
+        <label for="f-grade">Grade</label>
+        <select id="f-grade" data-filter="grade_id">
+          <option value="">All grades</option>
+          {% for option in filter_options.grades %}
+            <option value="{{ option.id }}" {% if filters.grade_id == option.id %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
+
+    {% if "section" in visible_filters %}
+      <div class="filter">
+        <label for="f-section">Class</label>
+        <select id="f-section" data-filter="section_id">
+          {% if "section_required" not in visible_filters %}
+            <option value="">All classes</option>
+          {% endif %}
+          {% for option in filter_options.sections %}
+            <option value="{{ option.id }}" {% if filters.section_id == option.id %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
+
+    {% if "assessment_type" in visible_filters %}
+      <div class="filter">
+        <label for="f-type">Assessment type</label>
+        <select id="f-type" data-filter="assessment_type">
+          <option value="">All types</option>
+          {% for option in filter_options.assessment_types %}
+            <option value="{{ option.id }}" {% if filters.assessment_type and filters.assessment_type.value == option.id %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
+
+    {% if "dates" in visible_filters %}
+      <div class="filter">
+        <label for="f-from">From</label>
+        <input id="f-from" type="date" data-filter="date_from" value="{{ filters.date_from or '' }}">
+      </div>
+      <div class="filter">
+        <label for="f-to">To</label>
+        <input id="f-to" type="date" data-filter="date_to" value="{{ filters.date_to or '' }}">
+      </div>
+    {% endif %}
+
+    <div class="filters__actions">
+      <button type="button" class="btn btn--ghost" data-action="reset-filters">Clear</button>
+    </div>
+  </div>
+  <div class="filters__summary" data-filter-summary></div>
+</form>

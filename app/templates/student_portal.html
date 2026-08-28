@@ -1,0 +1,29 @@
+{# Parent and student pages: an optional sibling switcher above the filter bar. #}
+{% extends "base.html" %}
+
+{% block before_filters %}
+  {% if children | length > 1 %}
+    <div class="card no-print" style="padding:14px 18px">
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">
+        <div>
+          <div class="card__title">Viewing</div>
+          <div class="card__subtitle">You have {{ children | length }} children linked to this account.</div>
+        </div>
+        <div class="child-switch">
+          {% for entry in children %}
+            <a href="{{ active_nav }}?student_id={{ entry.id }}"
+               aria-current="{{ 'true' if entry.current else 'false' }}">{{ entry.name }}</a>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block topbar_actions %}
+  <span class="pill pill--neutral nowrap">{{ child.section.grade.name }} {{ child.section.name }}</span>
+{% endblock %}
+
+{% block content %}
+  {% include "components/_cards.html" %}
+{% endblock %}

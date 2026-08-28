@@ -1,0 +1,21 @@
+{# A single analytics card. `chart` is a registry key; the browser fetches it from
+   /api/charts/<key> with the active filters applied.
+
+   Usage: {% set card = {"key": "student.vs_class", "title": "...", "span": 6} %}
+          {% include "components/_card.html" %}
+#}
+<section class="card span-{{ card.span | default(6) }}" data-chart="{{ card.key }}">
+  <div class="card__head">
+    <div>
+      <h2 class="card__title">{{ card.title }}</h2>
+      <p class="card__subtitle" data-chart-subtitle>{{ card.subtitle | default("") }}</p>
+    </div>
+    <div class="card__actions">
+      <button type="button" class="btn btn--sm" data-action="export" title="Download as CSV">CSV</button>
+      <button type="button" class="btn btn--sm" data-action="reload" title="Reload">Refresh</button>
+    </div>
+  </div>
+  <div class="card__body {{ 'card__body--flush' if card.flush else '' }}">
+    <div class="{{ card.holder | default('chart-holder') }}" data-chart-body></div>
+  </div>
+</section>

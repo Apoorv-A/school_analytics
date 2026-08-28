@@ -1,0 +1,79 @@
+{# Shell for every signed-in page: sidebar, topbar, filter bar, and card grid. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ page_title }}{% endblock %} - {{ app_name }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <a class="brand" href="{{ portal_home }}">
+      <span class="brand__mark" aria-hidden="true">SA</span>
+      <span>
+        {{ school.name if school else app_name }}
+        <small>{{ current_user.role.label }}</small>
+      </span>
+    </a>
+
+    <nav class="sidebar__nav" aria-label="Portal navigation">
+      {% for group in nav_groups %}
+        <div class="nav-group">
+          {% if group.title %}<p class="nav-group__title">{{ group.title }}</p>{% endif %}
+          {% for item in group['items'] %}
+            <a class="nav-link" href="{{ item.href }}"
+               {% if item.href == active_nav %}aria-current="page"{% endif %}>
+              <span class="nav-link__icon" aria-hidden="true">{{ item.icon }}</span>
+              <span>{{ item.label }}</span>
+            </a>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </nav>
+
+    <div class="sidebar__footer">
+      <div class="who">
+        <span class="avatar" aria-hidden="true">{{ current_user.full_name[:1]|upper }}</span>
+        <div style="min-width:0">
+          <div class="who__name" title="{{ current_user.full_name }}">{{ current_user.full_name }}</div>
+          <div class="who__role">{{ current_user.email }}</div>
+        </div>
+      </div>
+      <a class="btn btn--block" href="/logout">Sign out</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <h1>{{ page_title }}</h1>
+        {% if page_subtitle %}<div class="topbar__subtitle">{{ page_subtitle }}</div>{% endif %}
+      </div>
+      <div class="topbar__actions">
+        {% block topbar_actions %}{% endblock %}
+        <button type="button" class="btn" data-action="print">Print / PDF</button>
+      </div>
+    </header>
+
+    <div class="content">
+      {% block before_filters %}{% endblock %}
+
+      {% if visible_filters %}
+        {% include "components/_filters.html" %}
+      {% endif %}
+
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+<script src="/static/js/filters.js"></script>
+<script src="/static/js/charts.js"></script>
+</body>
+</html>

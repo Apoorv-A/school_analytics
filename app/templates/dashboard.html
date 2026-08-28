@@ -1,0 +1,10 @@
+{# Generic dashboard page: an optional intro block plus a grid of analytics cards.
+   Every portal page uses this, so a new view is a router entry and a card list. #}
+{% extends "base.html" %}
+
+{% block content %}
+  {% if intro %}
+    <div class="alert alert--info no-print">{{ intro }}</div>
+  {% endif %}
+  {% include "components/_cards.html" %}
+{% endblock %}

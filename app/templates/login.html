@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in - {{ app_name }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<div class="auth-shell">
+  <section class="auth-hero">
+    <div class="auth-hero__badge">
+      <span class="auth-hero__mark" aria-hidden="true">SA</span>
+      <span>{{ app_name }}</span>
+    </div>
+    <div>
+      <h1>Every stakeholder gets the whole picture.</h1>
+      <p>
+        One place for parents, students, teachers and school leadership to follow academic
+        progress through the year, with the same numbers computed the same way for everyone.
+      </p>
+      <ul class="auth-hero__list">
+        <li><span aria-hidden="true">&#9679;</span><span><strong>Parents</strong>Track your child subject by subject, against the class and across terms.</span></li>
+        <li><span aria-hidden="true">&#9679;</span><span><strong>Students</strong>See where you are strong, where to push, and how you are trending.</span></li>
+        <li><span aria-hidden="true">&#9679;</span><span><strong>Teachers</strong>Classroom distributions, per-assessment difficulty, and who needs help now.</span></li>
+        <li><span aria-hidden="true">&#9679;</span><span><strong>Principals</strong>Grade, subject and class comparisons, plus the school-wide at-risk cohort.</span></li>
+      </ul>
+    </div>
+    <p class="muted" style="color:#a5b4fc">Data shown in this deployment is synthetic.</p>
+  </section>
+
+  <section class="auth-panel">
+    <div class="auth-card">
+      <h2>Sign in</h2>
+      <p>Use your school account to open your portal.</p>
+
+      {% if error %}
+        <div class="alert alert--error" style="margin-bottom:18px" role="alert">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="/login" autocomplete="on">
+        <div class="field">
+          <label for="email">Email address</label>
+          <input id="email" name="email" type="email" required autocomplete="username"
+                 placeholder="you@school.edu" autofocus>
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" required
+                 autocomplete="current-password" placeholder="Your password">
+        </div>
+        <button type="submit" class="btn btn--primary btn--block">Sign in</button>
+      </form>
+
+      {% if demo_accounts %}
+        <div class="demo-accounts">
+          <h3>Demo accounts</h3>
+          {% for account in demo_accounts %}
+            <button type="button" class="demo-account" data-email="{{ account.email }}"
+                    data-password="{{ demo_password }}">
+              <span>
+                <strong>{{ account.role }}</strong>
+                <code>{{ account.email }}</code>
+              </span>
+              <span class="muted">Use</span>
+            </button>
+          {% endfor %}
+          <p class="muted" style="font-size:11.5px;margin:10px 0 0">
+            Seeded accounts for local evaluation. They are not shown once real users exist.
+          </p>
+        </div>
+      {% endif %}
+    </div>
+  </section>
+</div>
+
+<script src="/static/js/login.js"></script>
+</body>
+</html>
