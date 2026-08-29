@@ -361,6 +361,143 @@ class TestFiltersApplyEverywhere:
         ).json()
         assert 0 < len(windowed["labels"]) < len(everything["labels"])
 
+    def test_remarks_respect_the_academic_year(self, parent_context, db):
+        """The remarks page offers a year control, so it has to do something."""
+        from sqlalchemy import func, select
+
+        from app.models import AcademicYear
+
+        client = parent_context["client"]
+        params = {"student_id": parent_context["child_id"]}
+
+        current_year, other_year = db.execute(
+            select(
+                select(AcademicYear.id).order_by(AcademicYear.id).limit(1).scalar_subquery(),
+                func.max(AcademicYear.id) + 1,
+            )
+        ).one()
+
+        this_year = client.get(
+            "/api/charts/student.remarks",
+            params={**params, "academic_year_id": current_year},
+        ).json()
+        assert this_year["items"], "seeded remarks belong to the current year"
+
+        # A year the school has no terms in must not carry remarks over.
+        empty = client.get(
+            "/api/charts/student.remarks",
+            params={**params, "academic_year_id": other_year},
+        ).json()
+        assert empty["items"] == []
+
+    def test_general_remark_without_a_term_is_placed_by_its_date(
+        self, parent_context, db
+    ):
+        """A school-office note has no term, so it cannot follow one to a year.
+
+        Dropping it under a year filter would silently lose content, so it is
+        matched on the date it was written instead.
+        """
+        from datetime import UTC, datetime
+
+        from sqlalchemy import select
+
+        from app.db import SessionLocal
+        from app.models import AcademicYear, Remark, RemarkCategory
+
+        year = db.scalars(select(AcademicYear).order_by(AcademicYear.id).limit(1)).one()
+        child_id = parent_context["child_id"]
+        marker = "Termless note for the year filter test"
+        inside = datetime(
+            year.start_date.year, year.start_date.month, year.start_date.day,
+            12, 0, tzinfo=UTC,
+        )
+
+        with SessionLocal() as session:
+            remark = Remark(
+                student_id=child_id,
+                teacher_id=None,
+                term_id=None,
+                category=RemarkCategory.ACADEMIC,
+                body=marker,
+                created_at=inside,
+            )
+            session.add(remark)
+            session.commit()
+            remark_id = remark.id
+
+        try:
+            client = parent_context["client"]
+            in_year = client.get(
+                "/api/charts/student.remarks",
+                params={"student_id": child_id, "academic_year_id": year.id},
+            ).json()
+            bodies = [item["body"] for item in in_year["items"]]
+            assert marker in bodies, "a note written inside the year must stay visible"
+
+            other = client.get(
+                "/api/charts/student.remarks",
+                params={"student_id": child_id, "academic_year_id": year.id + 1000},
+            ).json()
+            assert marker not in [item["body"] for item in other["items"]]
+        finally:
+            with SessionLocal() as session:
+                session.delete(session.get(Remark, remark_id))
+                session.commit()
+
+    def test_monthly_attendance_crosses_the_year_boundary_in_order(
+        self, parent_context, db
+    ):
+        """Months must stay chronological from December into January.
+
+        The academic year runs April to March, so the buckets have to be keyed on
+        year and month rather than sorted as text.
+        """
+        from app.analytics.queries import attendance_monthly
+        from app.schemas import FilterParams
+
+        rows = attendance_monthly(db, parent_context["child_id"], FilterParams())
+        labels = [row["label"] for row in rows]
+        assert labels, "seeded attendance should span several months"
+
+        month_names = [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        ]
+        keys = []
+        for label in labels:
+            name, year = label.split()
+            keys.append((int(year), month_names.index(name) + 1))
+        assert keys == sorted(keys), labels
+
+        # A December bucket must precede the following January, not follow it.
+        if (2025, 12) in keys and (2026, 1) in keys:
+            assert keys.index((2025, 12)) < keys.index((2026, 1))
+
+        for row in rows:
+            assert row["total"] == sum(
+                row[status] for status in ("present", "absent", "late", "excused")
+            )
+            if row["total"]:
+                assert 0 <= row["percentage"] <= 100
+
+    def test_remarks_respect_the_term(self, parent_context, db):
+        from sqlalchemy import select
+
+        from app.models import Term
+
+        client = parent_context["client"]
+        params = {"student_id": parent_context["child_id"]}
+        term_id = db.scalars(select(Term.id).order_by(Term.sequence).limit(1)).one()
+
+        full_year = client.get("/api/charts/student.remarks", params=params).json()
+        one_term = client.get(
+            "/api/charts/student.remarks", params={**params, "term_id": term_id}
+        ).json()
+        assert len(one_term["items"]) <= len(full_year["items"])
+        for item in one_term["items"]:
+            assert item["term"] in (full_year["items"][0]["term"], item["term"])
+
     def test_impossible_filter_combination_returns_an_empty_payload(
         self, admin_client
     ):
@@ -412,6 +549,69 @@ class TestPortalPages:
         response = admin_client.get(path)
         assert response.status_code == 200
         assert "data-chart" in response.text
+
+    def test_pinned_filters_reach_the_chart_api(self, teacher_context, db):
+        """A drill-down must query the student it is headed with.
+
+        The chart API is built from the filter bar, and this page deliberately
+        hides the student control. Without a hidden control carrying the pinned
+        id, every card would silently fall back to a different student.
+        """
+        import re
+
+        from sqlalchemy import select
+
+        from app.models import Student
+
+        # Pick a student who is *not* the one a bare request would default to,
+        # otherwise the bug this guards against would pass unnoticed.
+        client = teacher_context["client"]
+        fallback = client.get("/api/charts/student.kpis").json()["meta"]["student"]
+        target = db.scalars(
+            select(Student)
+            .where(
+                Student.section_id.in_(teacher_context["section_ids"]),
+                Student.full_name != fallback,
+            )
+            .order_by(Student.id)
+            .limit(1)
+        ).first()
+        assert target is not None, "need a second student to make this meaningful"
+
+        html = client.get(f"/teacher/student/{target.id}").text
+        pinned = re.findall(
+            r'<input[^>]*data-filter="student_id"[^>]*value="(\d+)"', html
+        )
+        assert pinned == [str(target.id)], (
+            "the page must pin the student it displays; found " f"{pinned!r}"
+        )
+
+        # The pinned value is what the browser will send, so the charts must
+        # then be about the requested student rather than the fallback.
+        meta = client.get(
+            "/api/charts/student.kpis", params={"student_id": target.id}
+        ).json()["meta"]
+        assert meta["student"] == target.full_name
+        assert meta["student"] != fallback
+
+    def test_pinned_filters_are_not_offered_as_clearable(self, teacher_context, db):
+        """Clearing filters must not drop a value the route pinned."""
+        import re
+
+        from sqlalchemy import select
+
+        from app.models import Student
+
+        student_id = db.scalars(
+            select(Student.id)
+            .where(Student.section_id.in_(teacher_context["section_ids"]))
+            .order_by(Student.id)
+            .limit(1)
+        ).first()
+        html = teacher_context["client"].get(f"/teacher/student/{student_id}").text
+        tag = re.search(r"<input[^>]*data-filter=\"student_id\"[^>]*>", html)
+        assert tag is not None
+        assert "data-filter-pinned" in tag.group(0), tag.group(0)
 
     def test_login_redirects_each_role_to_its_own_portal(self, db):
         from sqlalchemy import select
@@ -476,6 +676,69 @@ class TestExports:
 
     def test_unknown_export_is_a_404(self, admin_client):
         assert admin_client.get("/export/school.nope.csv").status_code == 404
+
+    def test_export_neutralises_spreadsheet_formulas(self, parent_context, db):
+        """A remark starting with = must not run as a formula when opened."""
+        import csv
+        import io
+
+        from sqlalchemy import select
+
+        from app.db import SessionLocal
+        from app.models import Remark, RemarkCategory, Term
+
+        child_id = parent_context["child_id"]
+        payload = '=cmd|\' /C calc\'!A0'
+        term_id = db.scalars(select(Term.id).order_by(Term.sequence).limit(1)).one()
+
+        with SessionLocal() as session:
+            remark = Remark(
+                student_id=child_id,
+                teacher_id=None,
+                term_id=term_id,
+                category=RemarkCategory.CONCERN,
+                body=payload,
+            )
+            session.add(remark)
+            session.commit()
+            remark_id = remark.id
+
+        try:
+            response = parent_context["client"].get(
+                "/export/student.remarks.csv", params={"student_id": child_id}
+            )
+            assert response.status_code == 200
+            cells = [cell for row in csv.reader(io.StringIO(response.text)) for cell in row]
+            assert payload not in cells, "raw formula reached the export"
+            assert "'" + payload in cells, cells[-3:]
+        finally:
+            with SessionLocal() as session:
+                session.delete(session.get(Remark, remark_id))
+                session.commit()
+
+    def test_export_keeps_negative_numbers_numeric(self, admin_client):
+        """The guard must not turn a negative metric into text."""
+        import csv
+        import io
+
+        from app.routers.exports import _safe_cell
+
+        assert _safe_cell(-5.0) == -5.0
+        assert _safe_cell(-5) == -5
+        assert _safe_cell("-5") == "'-5"
+
+        # A real export carrying negative values must still parse as numbers.
+        response = admin_client.get("/export/school.at_risk.csv")
+        rows = list(csv.reader(io.StringIO(response.text)))
+        numeric = [
+            cell
+            for row in rows[4:]
+            for cell in row
+            if cell and cell.lstrip("-").replace(".", "", 1).isdigit()
+        ]
+        assert numeric, "expected numeric cells in this export"
+        for cell in numeric:
+            assert not cell.startswith("'")
 
 
 class TestHealth:

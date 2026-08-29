@@ -389,12 +389,20 @@ def attendance_monthly(
     db: Session, student_id: int, filters: FilterParams
 ) -> list[dict[str, object]]:
     """Month-by-month attendance breakdown for one student."""
-    month_expr = func.strftime("%Y-%m", Attendance.on_date)
+    # `extract` is compiled per dialect by SQLAlchemy, where `strftime` would tie
+    # this query, and only this query, to SQLite.
+    year_expr = func.extract("year", Attendance.on_date)
+    month_expr = func.extract("month", Attendance.on_date)
     stmt = (
-        select(month_expr.label("month"), Attendance.status, func.count(Attendance.id))
+        select(
+            year_expr.label("year"),
+            month_expr.label("month"),
+            Attendance.status,
+            func.count(Attendance.id),
+        )
         .where(Attendance.student_id == student_id)
-        .group_by("month", Attendance.status)
-        .order_by("month")
+        .group_by(year_expr, month_expr, Attendance.status)
+        .order_by(year_expr, month_expr)
     )
     if filters.term_id is not None:
         stmt = stmt.where(Attendance.term_id == filters.term_id)
@@ -409,24 +417,24 @@ def attendance_monthly(
     if filters.date_to is not None:
         stmt = stmt.where(Attendance.on_date <= filters.date_to)
 
-    buckets: dict[str, dict[str, int]] = defaultdict(
+    # Keyed on (year, month) so a December to January run stays in order.
+    buckets: dict[tuple[int, int], dict[str, int]] = defaultdict(
         lambda: {status.value: 0 for status in AttendanceStatus}
     )
-    for month, status, count in db.execute(stmt).all():
+    for year, month, status, count in db.execute(stmt).all():
         key = status.value if isinstance(status, AttendanceStatus) else str(status)
-        buckets[month][key] = count
+        buckets[(int(year), int(month))][key] = count
 
     rows: list[dict[str, object]] = []
-    for month in sorted(buckets):
-        year_part, month_part = month.split("-")
-        counts = buckets[month]
+    for year, month in sorted(buckets):
+        counts = buckets[(year, month)]
         total = sum(counts.values())
         present = (
             counts[AttendanceStatus.PRESENT.value] + counts[AttendanceStatus.LATE.value]
         )
         rows.append(
             {
-                "label": f"{MONTH_LABELS[int(month_part) - 1]} {year_part[2:]}",
+                "label": f"{MONTH_LABELS[month - 1]} {year % 100:02d}",
                 **counts,
                 "total": total,
                 "percentage": metrics.attendance_percentage(present, total),
@@ -645,6 +653,25 @@ def student_remarks(
     )
     if filters.term_id is not None:
         stmt = stmt.where(Remark.term_id == filters.term_id)
+    if filters.academic_year_id is not None:
+        # A remark reaches its year through its term, but `term_id` is nullable for
+        # general school-office notes. Those have no term to follow, so they are
+        # placed by the date they were written instead of being dropped entirely.
+        in_year_terms = Remark.term_id.in_(
+            select(Term.id).where(Term.academic_year_id == filters.academic_year_id)
+        )
+        undated_but_within = and_(
+            Remark.term_id.is_(None),
+            Remark.created_at
+            >= select(AcademicYear.start_date)
+            .where(AcademicYear.id == filters.academic_year_id)
+            .scalar_subquery(),
+            Remark.created_at
+            <= select(AcademicYear.end_date)
+            .where(AcademicYear.id == filters.academic_year_id)
+            .scalar_subquery(),
+        )
+        stmt = stmt.where(or_(in_year_terms, undated_but_within))
 
     rows: list[dict[str, object]] = []
     for remark, term_name, teacher_name, subject_name in db.execute(stmt).all():

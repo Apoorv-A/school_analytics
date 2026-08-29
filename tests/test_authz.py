@@ -371,6 +371,43 @@ class TestSessionLifecycle:
         assert "httponly" in cookie_header
         assert "samesite=strict" in cookie_header
 
+    def test_logout_deletion_mirrors_the_cookie_attributes(self, admin_client):
+        """A deletion that drops Secure is ignored for a Secure cookie.
+
+        The token is signed and self-contained with no server-side revocation, so
+        a cookie that survives logout stays usable until it expires.
+        """
+        from app.config import settings
+
+        original = settings.session_cookie_secure
+        settings.session_cookie_secure = True
+        try:
+            header = admin_client.get("/logout").headers["set-cookie"].lower()
+        finally:
+            settings.session_cookie_secure = original
+
+        assert "secure" in header, header
+        assert "samesite=strict" in header, header
+        assert "httponly" in header, header
+        # An immediate expiry is what actually removes it.
+        assert "max-age=0" in header or "expires=thu, 01 jan 1970" in header, header
+
+    def test_expired_session_redirect_also_clears_the_cookie(self, anon_client):
+        """The same attribute rule applies where a stale cookie is thrown away."""
+        from app.config import settings
+
+        anon_client.cookies.set(settings.session_cookie_name, "not-a-valid-token")
+        original = settings.session_cookie_secure
+        settings.session_cookie_secure = True
+        try:
+            response = anon_client.get("/admin", follow_redirects=False)
+        finally:
+            settings.session_cookie_secure = original
+
+        assert response.status_code == 303
+        header = response.headers["set-cookie"].lower()
+        assert "secure" in header and "samesite=strict" in header, header
+
 
 class TestSecurityHeaders:
     def test_headers_are_present(self, admin_client):

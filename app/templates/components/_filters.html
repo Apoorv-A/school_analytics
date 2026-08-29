@@ -1,8 +1,15 @@
-{# Filter bar. Only the filters a page lists in `visible_filters` are rendered, and
-   every option set has already been narrowed to this user's access scope. #}
+{# Filter bar. `rendered_filters` is the server's decision about which controls this
+   page draws, and every option set has already been narrowed to the user's scope.
+
+   Anything the page resolved but does not draw arrives in `pinned_filters` and is
+   emitted as a hidden control, because the chart API is built from this form: a
+   value with no control here would be missing from every card request. #}
 <form class="filters" data-filters method="get" action="">
+  {% for name, value in (pinned_filters or {}).items() %}
+    <input type="hidden" data-filter="{{ name }}" data-filter-pinned value="{{ value }}">
+  {% endfor %}
   <div class="filters__row">
-    {% if "academic_year" in visible_filters and filter_options.academic_years|length > 1 %}
+    {% if "academic_year" in rendered_filters %}
       <div class="filter">
         <label for="f-year">Academic year</label>
         <select id="f-year" data-filter="academic_year_id">
@@ -13,7 +20,7 @@
       </div>
     {% endif %}
 
-    {% if "student" in visible_filters and filter_options.students|length > 1 %}
+    {% if "student" in rendered_filters %}
       <div class="filter filter--wide">
         <label for="f-student">Student</label>
         <select id="f-student" data-filter="student_id">
@@ -27,7 +34,7 @@
       </div>
     {% endif %}
 
-    {% if "term" in visible_filters %}
+    {% if "term" in rendered_filters %}
       <div class="filter">
         <label for="f-term">Term</label>
         <select id="f-term" data-filter="term_id">
@@ -39,7 +46,7 @@
       </div>
     {% endif %}
 
-    {% if "subject" in visible_filters %}
+    {% if "subject" in rendered_filters %}
       <div class="filter">
         <label for="f-subject">Subject</label>
         <select id="f-subject" data-filter="subject_id">
@@ -51,7 +58,7 @@
       </div>
     {% endif %}
 
-    {% if "grade" in visible_filters %}
+    {% if "grade" in rendered_filters %}
       <div class="filter">
         <label for="f-grade">Grade</label>
         <select id="f-grade" data-filter="grade_id">
@@ -63,7 +70,7 @@
       </div>
     {% endif %}
 
-    {% if "section" in visible_filters %}
+    {% if "section" in rendered_filters %}
       <div class="filter">
         <label for="f-section">Class</label>
         <select id="f-section" data-filter="section_id">
@@ -77,7 +84,7 @@
       </div>
     {% endif %}
 
-    {% if "assessment_type" in visible_filters %}
+    {% if "assessment_type" in rendered_filters %}
       <div class="filter">
         <label for="f-type">Assessment type</label>
         <select id="f-type" data-filter="assessment_type">
@@ -89,7 +96,7 @@
       </div>
     {% endif %}
 
-    {% if "dates" in visible_filters %}
+    {% if "dates" in rendered_filters %}
       <div class="filter">
         <label for="f-from">From</label>
         <input id="f-from" type="date" data-filter="date_from" value="{{ filters.date_from or '' }}">

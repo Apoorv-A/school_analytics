@@ -683,7 +683,13 @@
     const lines = [];
     const escape = function (value) {
       if (value === null || value === undefined) return "";
-      const text = String(value);
+      let text = String(value);
+      // A spreadsheet reads a leading =, +, -, @, tab or CR as the start of a
+      // formula. Names and remarks are free text, so those are neutralised. Only
+      // strings are guarded, so a negative number stays a number.
+      if (typeof value === "string" && /^[=+\-@\t\r]/.test(text)) {
+        text = "'" + text;
+      }
       return /[",\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
     };
 

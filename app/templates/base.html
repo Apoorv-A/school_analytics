@@ -63,7 +63,9 @@
     <div class="content">
       {% block before_filters %}{% endblock %}
 
-      {% if visible_filters %}
+      {# Also rendered when only pinned values exist: the chart API reads this form,
+         so it has to be present even if there is nothing for the user to change. #}
+      {% if visible_filters or pinned_filters %}
         {% include "components/_filters.html" %}
       {% endif %}
 

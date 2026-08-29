@@ -98,6 +98,25 @@ def _set_session_cookie(response: Response, user: User) -> None:
     )
 
 
+def clear_session_cookie(response: Response) -> None:
+    """Expire the session cookie.
+
+    A browser only treats a deletion as being for the same cookie when the
+    attributes match the ones it was set with, so a deletion that omits Secure is
+    commonly ignored for a Secure cookie. The token is self-contained and signed
+    with no server-side revocation, so a cookie surviving logout stays valid
+    until it expires on its own: these attributes have to mirror
+    `_set_session_cookie` exactly.
+    """
+    response.delete_cookie(
+        key=settings.session_cookie_name,
+        path="/",
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite="strict",
+    )
+
+
 def _login_context(db: Session, error: str | None) -> dict[str, object]:
     return {
         "error": error,
@@ -178,5 +197,5 @@ def login_submit(
 @router.get("/logout")
 def logout() -> Response:
     response = RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
-    response.delete_cookie(settings.session_cookie_name, path="/")
+    clear_session_cookie(response)
     return response

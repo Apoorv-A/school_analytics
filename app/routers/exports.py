@@ -25,6 +25,22 @@ from app.schemas import FilterParams, filter_params
 
 router = APIRouter(prefix="/export", tags=["export"])
 
+# A spreadsheet treats a leading one of these as the start of a formula, so text
+# beginning with one can be made to fetch a remote URL or invoke DDE when the file
+# is opened. Names and teacher remarks are free text, so they get neutralised.
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _safe_cell(value: object) -> object:
+    """Neutralise a cell that a spreadsheet would read as a formula.
+
+    Only strings are touched, so a negative number such as -5.0 is still exported
+    as a number rather than becoming text.
+    """
+    if not isinstance(value, str) or not value.startswith(_FORMULA_PREFIXES):
+        return value
+    return "'" + value
+
 
 def _rows_for(payload: dict) -> tuple[list[str], list[list[object]]]:
     """Flatten any chart payload into a header row and data rows."""
@@ -111,8 +127,10 @@ def export_chart_csv(
     writer.writerow([definition.title])
     writer.writerow([f"Exported {datetime.now(UTC):%Y-%m-%d %H:%M} UTC"])
     writer.writerow([])
-    writer.writerow(header)
-    writer.writerows(rows)
+    # Sanitised here rather than inside `_rows_for`, so a chart kind added later is
+    # covered without having to remember this.
+    writer.writerow([_safe_cell(cell) for cell in header])
+    writer.writerows([_safe_cell(cell) for cell in row] for row in rows)
     buffer.seek(0)
 
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")

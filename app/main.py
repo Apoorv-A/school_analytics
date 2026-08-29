@@ -15,6 +15,7 @@ from app.db import init_db
 from app.deps import NotAuthenticatedError, get_optional_user
 from app.portals import PORTAL_HOME
 from app.routers import admin, auth, charts, exports, parent, student, teacher
+from app.routers.auth import clear_session_cookie
 from app.templating import templates
 
 logging.basicConfig(
@@ -79,7 +80,7 @@ async def handle_not_authenticated(request: Request, exc: NotAuthenticatedError)
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
     response = RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
-    response.delete_cookie(settings.session_cookie_name, path="/")
+    clear_session_cookie(response)
     return response
 
 

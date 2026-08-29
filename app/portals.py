@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 
 from app.analytics import queries
 from app.deps import AccessScope
-from app.models import Role, School, Student
-from app.schemas import FilterParams
+from app.models import AssessmentType, Role, School, Student
+from app.schemas import FilterOptions, FilterParams
 from app.templating import templates
 
 PORTAL_HOME: dict[Role, str] = {
@@ -86,8 +86,55 @@ NAV: dict[Role, list[dict]] = {
 }
 
 
+# Each filter-bar control and the FilterParams fields it lets the user edit.
+FILTER_CONTROLS: dict[str, tuple[str, ...]] = {
+    "academic_year": ("academic_year_id",),
+    "student": ("student_id",),
+    "term": ("term_id",),
+    "subject": ("subject_id",),
+    "grade": ("grade_id",),
+    "section": ("section_id",),
+    "assessment_type": ("assessment_type",),
+    "dates": ("date_from", "date_to"),
+}
+
+
 def _school(db: Session) -> School | None:
     return db.scalars(select(School).limit(1)).first()
+
+
+def _rendered_filters(visible: list[str], options: FilterOptions) -> list[str]:
+    """The controls the filter bar will actually draw.
+
+    A dropdown offering a single choice is noise, so it is dropped. This is the
+    only place that decision is made, because whatever is not drawn here has to
+    travel to the chart API as a pinned value instead.
+    """
+    dropped = {
+        "academic_year": len(options.academic_years) <= 1,
+        "student": len(options.students) <= 1,
+    }
+    return [name for name in visible if not dropped.get(name, False)]
+
+
+def _pinned_filters(filters: FilterParams, rendered: list[str]) -> dict[str, str]:
+    """Filter values this page resolved that the user cannot edit here.
+
+    The chart API is driven entirely by the filter bar, so a value with no
+    control would silently vanish from every card request and the charts would
+    fall back to some other default. On a student drill-down that means a page
+    headed with one child showing another child's marks, so these values are
+    emitted as hidden controls instead.
+    """
+    editable = {field for name in rendered for field in FILTER_CONTROLS.get(name, ())}
+    pinned: dict[str, str] = {}
+    for fields in FILTER_CONTROLS.values():
+        for field in fields:
+            value = getattr(filters, field, None)
+            if field in editable or value is None:
+                continue
+            pinned[field] = value.value if isinstance(value, AssessmentType) else str(value)
+    return pinned
 
 
 def render_dashboard(
@@ -106,15 +153,19 @@ def render_dashboard(
     extra: dict | None = None,
 ):
     """Render a portal page with the filter bar and its card grid."""
+    options = queries.filter_options(db, scope)
+    rendered_filters = _rendered_filters(visible_filters, options)
     context = {
         "page_title": title,
         "page_subtitle": subtitle,
         "active_nav": active_nav,
         "visible_filters": visible_filters,
+        "rendered_filters": rendered_filters,
+        "pinned_filters": _pinned_filters(filters, rendered_filters),
         "cards": cards,
         "intro": intro,
         "filters": filters,
-        "filter_options": queries.filter_options(db, scope),
+        "filter_options": options,
         "current_user": scope.user,
         "scope": scope,
         "school": _school(db),

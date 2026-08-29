@@ -15,6 +15,17 @@
     return Array.prototype.slice.call(form.querySelectorAll("[data-filter]"));
   }
 
+  /**
+   * Controls the user can actually change. Pinned values belong to the route that
+   * rendered the page, so they are sent with every request but are not the user's
+   * choice: clearing or listing them as active filters would be wrong.
+   */
+  function editableControls() {
+    return controls().filter(function (control) {
+      return !control.hasAttribute("data-filter-pinned");
+    });
+  }
+
   function queryString() {
     const params = new URLSearchParams();
     controls().forEach(function (control) {
@@ -43,7 +54,7 @@
     if (!summary) return;
     while (summary.firstChild) summary.removeChild(summary.firstChild);
 
-    const active = controls().filter(function (control) {
+    const active = editableControls().filter(function (control) {
       return (control.value || "").trim() !== "";
     });
     if (!active.length) {
@@ -76,7 +87,7 @@
   }
 
   function reset() {
-    controls().forEach(function (control) {
+    editableControls().forEach(function (control) {
       control.value = "";
     });
     announceChange();
@@ -87,7 +98,7 @@
       event.preventDefault();
       announceChange();
     });
-    controls().forEach(function (control) {
+    editableControls().forEach(function (control) {
       control.addEventListener("change", announceChange);
     });
     const resetButton = form.querySelector("[data-action='reset-filters']");
