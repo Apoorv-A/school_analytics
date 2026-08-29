@@ -183,6 +183,8 @@ def _render(
         active_nav="/teacher" if page_key == "overview" else f"/teacher/{page_key}",
         visible_filters=page["filters"],
         cards=page["cards"],
+        # Defaulted above when the teacher has not picked a class.
+        pinned=["section_id"],
     )
 
 
@@ -224,6 +226,9 @@ def student_detail(
         active_nav="/teacher/students",
         visible_filters=["academic_year", "term", "subject", "assessment_type"],
         cards=page["cards"],
+        # This page is about the student in the URL, and deliberately offers no
+        # student control, so the charts have to be told which one.
+        pinned=["student_id"],
     )
 
 

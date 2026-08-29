@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import Select, and_, case, func, or_, select
 from sqlalchemy.orm import Session
@@ -660,18 +660,28 @@ def student_remarks(
         in_year_terms = Remark.term_id.in_(
             select(Term.id).where(Term.academic_year_id == filters.academic_year_id)
         )
-        undated_but_within = and_(
-            Remark.term_id.is_(None),
-            Remark.created_at
-            >= select(AcademicYear.start_date)
-            .where(AcademicYear.id == filters.academic_year_id)
-            .scalar_subquery(),
-            Remark.created_at
-            <= select(AcademicYear.end_date)
-            .where(AcademicYear.id == filters.academic_year_id)
-            .scalar_subquery(),
-        )
-        stmt = stmt.where(or_(in_year_terms, undated_but_within))
+        window = db.execute(
+            select(AcademicYear.start_date, AcademicYear.end_date).where(
+                AcademicYear.id == filters.academic_year_id
+            )
+        ).first()
+        if window is None:
+            stmt = stmt.where(in_year_terms)
+        else:
+            start, end = window
+            # `created_at` is a timestamp, so the upper bound is the day *after*
+            # the year ends. Comparing against `end_date` itself coerces it to
+            # midnight and drops everything written during that final day.
+            stmt = stmt.where(
+                or_(
+                    in_year_terms,
+                    and_(
+                        Remark.term_id.is_(None),
+                        Remark.created_at >= start,
+                        Remark.created_at < end + timedelta(days=1),
+                    ),
+                )
+            )
 
     rows: list[dict[str, object]] = []
     for remark, term_name, teacher_name, subject_name in db.execute(stmt).all():

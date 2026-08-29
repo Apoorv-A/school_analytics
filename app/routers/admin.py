@@ -228,6 +228,9 @@ def student_detail(
         active_nav="/admin/student",
         visible_filters=["academic_year", "student", "term", "subject", "assessment_type"],
         cards=STUDENT_PAGES["overview"]["cards"],
+        # Normally carried by the student select; pinned so the page still works
+        # if that control is not drawn.
+        pinned=["student_id"],
     )
 
 

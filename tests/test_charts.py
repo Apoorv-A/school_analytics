@@ -407,24 +407,36 @@ class TestFiltersApplyEverywhere:
 
         year = db.scalars(select(AcademicYear).order_by(AcademicYear.id).limit(1)).one()
         child_id = parent_context["child_id"]
-        marker = "Termless note for the year filter test"
-        inside = datetime(
-            year.start_date.year, year.start_date.month, year.start_date.day,
-            12, 0, tzinfo=UTC,
-        )
 
+        # Midday on the first and on the *last* day of the year. The final day is
+        # the boundary: comparing a timestamp against end_date alone coerces it to
+        # midnight and drops everything written during that day.
+        cases = {
+            "termless note on the first day": datetime(
+                year.start_date.year, year.start_date.month, year.start_date.day,
+                12, 0, tzinfo=UTC,
+            ),
+            "termless note on the final day": datetime(
+                year.end_date.year, year.end_date.month, year.end_date.day,
+                23, 59, tzinfo=UTC,
+            ),
+        }
+
+        ids: list[int] = []
         with SessionLocal() as session:
-            remark = Remark(
-                student_id=child_id,
-                teacher_id=None,
-                term_id=None,
-                category=RemarkCategory.ACADEMIC,
-                body=marker,
-                created_at=inside,
-            )
-            session.add(remark)
+            for marker, written_at in cases.items():
+                remark = Remark(
+                    student_id=child_id,
+                    teacher_id=None,
+                    term_id=None,
+                    category=RemarkCategory.ACADEMIC,
+                    body=marker,
+                    created_at=written_at,
+                )
+                session.add(remark)
+                session.flush()
+                ids.append(remark.id)
             session.commit()
-            remark_id = remark.id
 
         try:
             client = parent_context["client"]
@@ -433,16 +445,19 @@ class TestFiltersApplyEverywhere:
                 params={"student_id": child_id, "academic_year_id": year.id},
             ).json()
             bodies = [item["body"] for item in in_year["items"]]
-            assert marker in bodies, "a note written inside the year must stay visible"
+            for marker in cases:
+                assert marker in bodies, f"{marker} was dropped by the year filter"
 
             other = client.get(
                 "/api/charts/student.remarks",
                 params={"student_id": child_id, "academic_year_id": year.id + 1000},
             ).json()
-            assert marker not in [item["body"] for item in other["items"]]
+            for marker in cases:
+                assert marker not in [item["body"] for item in other["items"]]
         finally:
             with SessionLocal() as session:
-                session.delete(session.get(Remark, remark_id))
+                for remark_id in ids:
+                    session.delete(session.get(Remark, remark_id))
                 session.commit()
 
     def test_monthly_attendance_crosses_the_year_boundary_in_order(
@@ -593,6 +608,42 @@ class TestPortalPages:
         ).json()["meta"]
         assert meta["student"] == target.full_name
         assert meta["student"] != fallback
+
+    def test_stale_query_ids_are_not_pinned(self, admin_client, db):
+        """Only what a route declares is forwarded, not leftovers in the URL.
+
+        A grade or class id carried over from another page has no control on this
+        page, so pinning it would silently narrow every chart with nothing in the
+        filter bar to reveal it or clear it.
+        """
+        import re
+
+        from sqlalchemy import select
+
+        from app.models import Grade, Section
+
+        grade_id = db.scalars(select(Grade.id).order_by(Grade.id).limit(1)).one()
+        section_id = db.scalars(select(Section.id).order_by(Section.id).limit(1)).one()
+
+        # The teaching-outcomes page draws neither a grade nor a class control.
+        html = admin_client.get(
+            "/admin/teachers", params={"grade_id": grade_id, "section_id": section_id}
+        ).text
+        hidden = dict(
+            re.findall(r'<input[^>]*data-filter="([^"]+)"[^>]*value="([^"]*)"', html)
+        )
+        assert "grade_id" not in hidden, hidden
+        assert "section_id" not in hidden, hidden
+
+    def test_declared_pin_must_name_a_real_field(self):
+        """A typo in a route's pin list has to fail loudly, not do nothing."""
+        import pytest as _pytest
+
+        from app.portals import _pinned_filters
+        from app.schemas import FilterParams
+
+        with _pytest.raises(ValueError, match="Unknown pinned filter"):
+            _pinned_filters(FilterParams(), [], ["studnet_id"])
 
     def test_pinned_filters_are_not_offered_as_clearable(self, teacher_context, db):
         """Clearing filters must not drop a value the route pinned."""

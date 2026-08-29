@@ -7,6 +7,8 @@ template, and the four portals cannot drift apart in layout or behaviour.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -117,23 +119,33 @@ def _rendered_filters(visible: list[str], options: FilterOptions) -> list[str]:
     return [name for name in visible if not dropped.get(name, False)]
 
 
-def _pinned_filters(filters: FilterParams, rendered: list[str]) -> dict[str, str]:
-    """Filter values this page resolved that the user cannot edit here.
+def _pinned_filters(
+    filters: FilterParams, rendered: list[str], declared: Sequence[str]
+) -> dict[str, str]:
+    """Values the route resolved itself that the user cannot edit on this page.
 
     The chart API is driven entirely by the filter bar, so a value with no
-    control would silently vanish from every card request and the charts would
-    fall back to some other default. On a student drill-down that means a page
-    headed with one child showing another child's marks, so these values are
-    emitted as hidden controls instead.
+    control would vanish from every card request and the charts would fall back
+    to some other default. On a student drill-down that means a page headed with
+    one child showing another child's marks, so the route names what it pinned
+    and those values travel as hidden controls.
+
+    Only declared fields are forwarded. Inferring this from "every value without
+    a control" would also forward an id left over in the query string from
+    another page, silently narrowing every chart with nothing in the filter bar
+    to reveal it or clear it.
     """
+    unknown = set(declared) - set(FilterParams.model_fields)
+    if unknown:
+        raise ValueError(f"Unknown pinned filter fields: {sorted(unknown)}")
+
     editable = {field for name in rendered for field in FILTER_CONTROLS.get(name, ())}
     pinned: dict[str, str] = {}
-    for fields in FILTER_CONTROLS.values():
-        for field in fields:
-            value = getattr(filters, field, None)
-            if field in editable or value is None:
-                continue
-            pinned[field] = value.value if isinstance(value, AssessmentType) else str(value)
+    for field in declared:
+        value = getattr(filters, field, None)
+        if field in editable or value is None:
+            continue
+        pinned[field] = value.value if isinstance(value, AssessmentType) else str(value)
     return pinned
 
 
@@ -148,11 +160,17 @@ def render_dashboard(
     active_nav: str,
     visible_filters: list[str],
     cards: list[dict],
+    pinned: Sequence[str] = (),
     intro: str | None = None,
     template: str = "dashboard.html",
     extra: dict | None = None,
 ):
-    """Render a portal page with the filter bar and its card grid."""
+    """Render a portal page with the filter bar and its card grid.
+
+    `pinned` names the `FilterParams` fields this route resolved on the user's
+    behalf, so they still reach the chart API when the page draws no control for
+    them.
+    """
     options = queries.filter_options(db, scope)
     rendered_filters = _rendered_filters(visible_filters, options)
     context = {
@@ -161,7 +179,7 @@ def render_dashboard(
         "active_nav": active_nav,
         "visible_filters": visible_filters,
         "rendered_filters": rendered_filters,
-        "pinned_filters": _pinned_filters(filters, rendered_filters),
+        "pinned_filters": _pinned_filters(filters, rendered_filters, pinned),
         "cards": cards,
         "intro": intro,
         "filters": filters,
