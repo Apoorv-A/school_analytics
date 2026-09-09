@@ -18,6 +18,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, timedelta
+import uuid
 
 from sqlalchemy import Select, and_, case, func, or_, select
 from sqlalchemy.orm import Session
@@ -160,7 +161,9 @@ class StudentStanding:
 
 
 def _scope_conditions(scope: AccessScope) -> list[ColumnElement[bool]]:
-    conditions: list[ColumnElement[bool]] = []
+    conditions: list[ColumnElement[bool]] = [
+        Score.tenant_id == scope.tenant_id,
+    ]
     if scope.student_ids is not None:
         if not scope.student_ids:
             # An empty allow-list must match nothing rather than everything.
@@ -333,6 +336,7 @@ def attendance_by_student(
         .join(Student, Attendance.student_id == Student.id)
         .join(Section, Student.section_id == Section.id)
         .group_by(Attendance.student_id, Attendance.status)
+        .where(Attendance.tenant_id == scope.tenant_id)
     )
 
     if student_ids is not None:
@@ -640,7 +644,7 @@ def student_term_progress(
 
 
 def student_remarks(
-    db: Session, student_id: int, filters: FilterParams
+    db: Session, student_id: int, filters: FilterParams, tenant_id: uuid.UUID
 ) -> list[dict[str, object]]:
     stmt = (
         select(Remark, Term.name, User.full_name, Subject.name)
@@ -648,7 +652,7 @@ def student_remarks(
         .outerjoin(Teacher, Remark.teacher_id == Teacher.id)
         .outerjoin(User, Teacher.user_id == User.id)
         .outerjoin(Subject, Remark.subject_id == Subject.id)
-        .where(Remark.student_id == student_id)
+        .where(Remark.student_id == student_id, Remark.tenant_id == tenant_id)
         .order_by(Remark.created_at.desc(), Remark.id.desc())
     )
     if filters.term_id is not None:
@@ -1229,7 +1233,7 @@ def default_student(
         select(Student)
         .join(Section, Student.section_id == Section.id)
         .join(Grade, Section.grade_id == Grade.id)
-        .where(Student.is_active.is_(True))
+        .where(Student.is_active.is_(True), Student.tenant_id == scope.tenant_id)
         .order_by(Grade.level, Section.name, Student.roll_no)
         .limit(1)
     )
@@ -1274,6 +1278,7 @@ def default_section_id(
     stmt = (
         select(Section.id)
         .join(Grade, Section.grade_id == Grade.id)
+        .where(Section.tenant_id == scope.tenant_id)
         .order_by(Grade.level, Section.name)
         .limit(1)
     )
@@ -1292,19 +1297,22 @@ def default_section_id(
 
 def filter_options(db: Session, scope: AccessScope) -> FilterOptions:
     """Dropdown contents, already narrowed to what the caller may select."""
+    tenant_id = scope.tenant_id
     years = [
         FilterOption(id=year.id, label=year.label)
         for year in db.scalars(
-            select(AcademicYear).order_by(AcademicYear.start_date.desc())
+            select(AcademicYear)
+            .where(AcademicYear.tenant_id == tenant_id)
+            .order_by(AcademicYear.start_date.desc())
         )
     ]
 
-    term_stmt = select(Term).order_by(Term.sequence)
+    term_stmt = select(Term).where(Term.tenant_id == tenant_id).order_by(Term.sequence)
     if scope.academic_year_id is not None:
         term_stmt = term_stmt.where(Term.academic_year_id == scope.academic_year_id)
     terms = [FilterOption(id=t.id, label=t.name) for t in db.scalars(term_stmt)]
 
-    subject_stmt = select(Subject).order_by(Subject.name)
+    subject_stmt = select(Subject).where(Subject.tenant_id == tenant_id).order_by(Subject.name)
     if scope.subject_ids is not None:
         subject_stmt = subject_stmt.where(Subject.id.in_(scope.subject_ids or {-1}))
     subjects = [FilterOption(id=s.id, label=s.name) for s in db.scalars(subject_stmt)]
@@ -1312,6 +1320,7 @@ def filter_options(db: Session, scope: AccessScope) -> FilterOptions:
     section_stmt = (
         select(Section, Grade)
         .join(Grade, Section.grade_id == Grade.id)
+        .where(Section.tenant_id == tenant_id)
         .order_by(Grade.level, Section.name)
     )
     if scope.section_ids is not None:
@@ -1327,7 +1336,7 @@ def filter_options(db: Session, scope: AccessScope) -> FilterOptions:
     ]
 
     grade_ids = {grade.id for _section, grade in section_rows}
-    grade_stmt = select(Grade).order_by(Grade.level)
+    grade_stmt = select(Grade).where(Grade.tenant_id == tenant_id).order_by(Grade.level)
     if scope.section_ids is not None:
         grade_stmt = grade_stmt.where(Grade.id.in_(grade_ids or {-1}))
     grades = [FilterOption(id=g.id, label=g.name) for g in db.scalars(grade_stmt)]
@@ -1338,7 +1347,10 @@ def filter_options(db: Session, scope: AccessScope) -> FilterOptions:
             select(Student.id, Student.full_name, Grade.name, Section.name)
             .join(Section, Student.section_id == Section.id)
             .join(Grade, Section.grade_id == Grade.id)
-            .where(Student.is_active.is_(True))
+            .where(
+                Student.is_active.is_(True),
+                Student.tenant_id == tenant_id,
+            )
             .order_by(Grade.level, Section.name, Student.roll_no)
         )
         students = [

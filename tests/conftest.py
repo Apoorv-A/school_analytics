@@ -26,7 +26,9 @@ from sqlalchemy import select  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Role, Section, Student, Teacher, TeacherAssignment, User  # noqa: E402
-from seed.generate import DEMO_PASSWORD, generate  # noqa: E402
+from seed.generate import DEMO_PASSWORD, SUNRISE_HOST, generate  # noqa: E402
+
+DEFAULT_HEADERS = {"Host": SUNRISE_HOST}
 
 
 def _remove_db_files() -> None:
@@ -51,7 +53,7 @@ def db():
 
 
 def _login(email: str) -> TestClient:
-    client = TestClient(app, follow_redirects=False)
+    client = TestClient(app, headers=DEFAULT_HEADERS, follow_redirects=False)
     response = client.post(
         "/login", data={"email": email, "password": DEMO_PASSWORD}
     )
@@ -60,14 +62,20 @@ def _login(email: str) -> TestClient:
 
 
 def _first_email(db, role: Role) -> str:
+    from app.models import Tenant
+
+    tenant = db.scalars(select(Tenant).where(Tenant.key == "sunrise")).one()
     return db.scalars(
-        select(User.email).where(User.role == role).order_by(User.id).limit(1)
+        select(User.email)
+        .where(User.role == role, User.tenant_id == tenant.id)
+        .order_by(User.id)
+        .limit(1)
     ).one()
 
 
 @pytest.fixture
 def anon_client() -> TestClient:
-    return TestClient(app, follow_redirects=False)
+    return TestClient(app, headers=DEFAULT_HEADERS, follow_redirects=False)
 
 
 @pytest.fixture

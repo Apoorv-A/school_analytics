@@ -22,6 +22,7 @@ from app.analytics.charts import CHART_REGISTRY
 from app.db import get_db
 from app.deps import AccessScope, get_access_scope
 from app.schemas import FilterParams, filter_params
+from app.tenant.features import require_exports_enabled
 
 router = APIRouter(prefix="/export", tags=["export"])
 
@@ -108,6 +109,7 @@ def export_chart_csv(
     db: Session = Depends(get_db),
     scope: AccessScope = Depends(get_access_scope),
 ) -> StreamingResponse:
+    require_exports_enabled()
     definition = CHART_REGISTRY.get(chart_key)
     if definition is None:
         raise HTTPException(

@@ -21,7 +21,34 @@ Pure Python, no Node and no build step.
 - Session cookie auth with bcrypt password hashing and signed, expiring tokens
 - pytest for the analytics maths and the authorization guards
 
-## Run it
+## Multi-tenant platform
+
+This application serves many schools from one deployment. Each school is a **tenant** resolved by hostname (for example `sunrise.localhost` after seeding). Tenant business settings live in the separate **school-analytics-config** repository and are applied by the Python tenant operator:
+
+```bash
+# Clone the config repo beside this project (separate repository)
+git clone https://github.com/Apoorv-A/school-analytics-config.git
+
+PYTHONPATH=. python -m tenant_operator validate --config=../school-analytics-config/tenants/sunrise/dev.yaml
+PYTHONPATH=. python -m tenant_operator apply --config=../school-analytics-config/tenants/sunrise/dev.yaml
+```
+
+Documentation lives under [`docs/`](docs/README.md). For AI handoff and full platform context, see [`docs/AI_HANDOFF.md`](docs/AI_HANDOFF.md).
+
+**Config repository (separate):** https://github.com/Apoorv-A/school-analytics-config
+
+```bash
+python scripts/docs_generate.py
+python scripts/docs_verify.py
+```
+
+Local Docker stack (PostgreSQL):
+
+```bash
+docker compose -f deploy/docker-compose.yml up --build
+```
+
+## Run it (local demo)
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -36,7 +63,9 @@ python -m seed.generate          # add --reset to rebuild an existing database
 uvicorn app.main:app --reload
 ```
 
-Open http://127.0.0.1:8000 and sign in. The seeder prints the demo logins when it
+Use `--host 0.0.0.0` and map hostnames in `/etc/hosts` (`127.0.0.1 sunrise.localhost horizon.localhost`) or pass the `Host` header when testing APIs.
+
+Open http://sunrise.localhost:8000 and sign in. The seeder prints the demo logins when it
 finishes; with `DEMO_MODE=true` the login page also lists them and fills them in on
 click.
 
@@ -116,7 +145,7 @@ run against it.
 ## Tests
 
 ```bash
-pytest            # 273 tests
+pytest            # 294 tests
 ruff check app seed tests
 ```
 

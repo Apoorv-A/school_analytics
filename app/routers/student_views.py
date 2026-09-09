@@ -15,6 +15,7 @@ from app.deps import AccessScope, get_access_scope, require_roles
 from app.models import Role
 from app.portals import render_dashboard, student_subtitle
 from app.schemas import FilterParams, filter_params
+from app.tenant.features import require_parent_portal, require_student_portal
 
 STUDENT_PAGES: dict[str, dict] = {
     "overview": {
@@ -154,8 +155,11 @@ def build_student_portal(prefix: str, role: Role, tag: str) -> APIRouter:
     Both portals show the same pages; the difference is entirely in the access scope,
     which resolves to the guardian's children or to the signed-in student themselves.
     """
+    portal_guard = require_parent_portal if role is Role.PARENT else require_student_portal
     router = APIRouter(
-        prefix=prefix, tags=[tag], dependencies=[Depends(require_roles(role))]
+        prefix=prefix,
+        tags=[tag],
+        dependencies=[Depends(require_roles(role)), Depends(portal_guard)],
     )
 
     def render(

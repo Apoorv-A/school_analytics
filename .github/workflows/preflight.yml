@@ -1,0 +1,42 @@
+name: preflight
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt alembic pyyaml
+
+      - name: Ruff
+        run: pip install ruff && ruff check app seed tests tenant_config tenant_operator scripts
+
+      - name: Tests
+        run: PYTHONPATH=. pytest -q
+        env:
+          SECRET_KEY: ci-test-secret
+
+      - name: Generate docs
+        run: PYTHONPATH=. python scripts/docs_generate.py
+
+      - name: Docs drift check
+        run: git diff --exit-code docs/analytics/chart-catalog.yaml docs/analytics/chart-catalog.md docs/data/column-dictionary.md
+
+      - name: Tenant schema export
+        run: PYTHONPATH=. python -m tenant_operator schema --output /tmp/tenant.schema.json
+
+      - name: Helm lint
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+      - run: helm lint deploy/helm/school-analytics

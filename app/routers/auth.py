@@ -22,6 +22,7 @@ from app.portals import PORTAL_HOME
 from app.schemas import LoginForm
 from app.security import create_session_token, hash_password, verify_password
 from app.templating import templates
+from app.tenant.context import get_tenant_context, require_tenant_context
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +38,9 @@ _attempts_lock = threading.Lock()
 _DUMMY_HASH = hash_password("this-account-does-not-exist")
 
 
-def _throttle_key(email: str, client_host: str) -> str:
-    # Hashed so no email address is ever held in the throttle table or a log line.
-    raw = f"{email.strip().lower()}|{client_host}".encode()
+def _throttle_key(email: str, client_host: str, tenant_id: str) -> str:
+    # Scoped per tenant so lockout on one school does not affect the same email elsewhere.
+    raw = f"{tenant_id}|{email.strip().lower()}|{client_host}".encode()
     return hashlib.sha256(raw).hexdigest()
 
 
@@ -69,17 +70,20 @@ def _clear_failures(key: str) -> None:
 
 
 def _demo_accounts(db: Session) -> list[dict[str, str]]:
-    """One seeded account per role, for local evaluation only.
-
-    Returns nothing unless DEMO_MODE is explicitly enabled, so a real deployment never
-    advertises valid email addresses on its sign-in page.
-    """
+    """One seeded account per role, for local evaluation only."""
     if not settings.demo_mode:
         return []
+    tenant_ctx = require_tenant_context()
     accounts: list[dict[str, str]] = []
     for role in (Role.ADMIN, Role.TEACHER, Role.PARENT, Role.STUDENT):
         user = db.scalars(
-            select(User).where(User.role == role, User.is_active.is_(True)).limit(1)
+            select(User)
+            .where(
+                User.role == role,
+                User.is_active.is_(True),
+                User.tenant_id == tenant_ctx.tenant_id,
+            )
+            .limit(1)
         ).first()
         if user is not None:
             accounts.append({"role": role.label, "email": user.email})
@@ -87,10 +91,12 @@ def _demo_accounts(db: Session) -> list[dict[str, str]]:
 
 
 def _set_session_cookie(response: Response, user: User) -> None:
+    ctx = get_tenant_context()
+    max_age = ctx.settings.session_max_age if ctx else settings.session_max_age
     response.set_cookie(
         key=settings.session_cookie_name,
-        value=create_session_token(user.id, user.role.value),
-        max_age=settings.session_max_age,
+        value=create_session_token(user.id, user.role.value, str(user.tenant_id)),
+        max_age=max_age,
         httponly=True,
         secure=settings.session_cookie_secure,
         samesite="strict",
@@ -158,7 +164,8 @@ def login_submit(
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
-    key = _throttle_key(credentials.email, client_host)
+    tenant_ctx = require_tenant_context()
+    key = _throttle_key(credentials.email, client_host, str(tenant_ctx.tenant_id))
     if _is_locked_out(key):
         return templates.TemplateResponse(
             request,
@@ -168,7 +175,12 @@ def login_submit(
         )
 
     normalized_email = credentials.email.strip().lower()
-    user = db.scalars(select(User).where(User.email == normalized_email)).first()
+    user = db.scalars(
+        select(User).where(
+            User.email == normalized_email,
+            User.tenant_id == tenant_ctx.tenant_id,
+        )
+    ).first()
     password_hash = user.password_hash if user is not None else _DUMMY_HASH
     password_ok = verify_password(credentials.password, password_hash)
 

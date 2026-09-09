@@ -276,9 +276,16 @@ class TestNaturalOrdering:
     def test_term_trend_follows_term_sequence(self, admin_client, db):
         from sqlalchemy import select
 
-        from app.models import Term
+        from app.models import Tenant, Term
 
-        expected = list(db.scalars(select(Term.name).order_by(Term.sequence)))
+        tenant = db.scalars(select(Tenant).where(Tenant.key == "sunrise")).one()
+        expected = list(
+            db.scalars(
+                select(Term.name)
+                .where(Term.tenant_id == tenant.id)
+                .order_by(Term.sequence)
+            )
+        )
         labels = admin_client.get("/api/charts/school.term_trend").json()["labels"]
         assert labels == expected
 
@@ -403,10 +410,11 @@ class TestFiltersApplyEverywhere:
         from sqlalchemy import select
 
         from app.db import SessionLocal
-        from app.models import AcademicYear, Remark, RemarkCategory
+        from app.models import AcademicYear, Remark, RemarkCategory, Student
 
         year = db.scalars(select(AcademicYear).order_by(AcademicYear.id).limit(1)).one()
         child_id = parent_context["child_id"]
+        child = db.get(Student, child_id)
 
         # Midday on the first and on the *last* day of the year. The final day is
         # the boundary: comparing a timestamp against end_date alone coerces it to
@@ -426,6 +434,7 @@ class TestFiltersApplyEverywhere:
         with SessionLocal() as session:
             for marker, written_at in cases.items():
                 remark = Remark(
+                    tenant_id=child.tenant_id,
                     student_id=child_id,
                     teacher_id=None,
                     term_id=None,
@@ -736,14 +745,21 @@ class TestExports:
         from sqlalchemy import select
 
         from app.db import SessionLocal
-        from app.models import Remark, RemarkCategory, Term
+        from app.models import Remark, RemarkCategory, Student, Term
 
         child_id = parent_context["child_id"]
+        child = db.get(Student, child_id)
         payload = '=cmd|\' /C calc\'!A0'
-        term_id = db.scalars(select(Term.id).order_by(Term.sequence).limit(1)).one()
+        term_id = db.scalars(
+            select(Term.id)
+            .where(Term.tenant_id == child.tenant_id)
+            .order_by(Term.sequence)
+            .limit(1)
+        ).one()
 
         with SessionLocal() as session:
             remark = Remark(
+                tenant_id=child.tenant_id,
                 student_id=child_id,
                 teacher_id=None,
                 term_id=term_id,

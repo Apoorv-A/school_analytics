@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import enum
+import uuid
 from datetime import UTC, date, datetime
 
 from sqlalchemy import (
@@ -15,8 +16,10 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
+    Uuid,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -88,14 +91,52 @@ class RemarkCategory(enum.StrEnum):
         return self.value.capitalize()
 
 
+class Tenant(Base):
+    """A school customer on the platform."""
+
+    __tablename__ = "tenants"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    key: Mapped[str] = mapped_column(String(40), nullable=False, unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    settings_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    domains: Mapped[list[TenantDomain]] = relationship(
+        back_populates="tenant", cascade="all, delete-orphan"
+    )
+    schools: Mapped[list[School]] = relationship(back_populates="tenant")
+
+
+class TenantDomain(Base):
+    """Maps a hostname to a tenant for request routing."""
+
+    __tablename__ = "tenant_domains"
+    __table_args__ = (UniqueConstraint("hostname", name="uq_tenant_domain_hostname"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    hostname: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    tenant: Mapped[Tenant] = relationship(back_populates="domains")
+
+
 class School(Base):
     __tablename__ = "schools"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     city: Mapped[str | None] = mapped_column(String(120))
     board: Mapped[str | None] = mapped_column(String(60))
 
+    tenant: Mapped[Tenant] = relationship(back_populates="schools")
     academic_years: Mapped[list[AcademicYear]] = relationship(back_populates="school")
     grades: Mapped[list[Grade]] = relationship(back_populates="school")
     subjects: Mapped[list[Subject]] = relationship(back_populates="school")
@@ -106,6 +147,9 @@ class AcademicYear(Base):
     __table_args__ = (UniqueConstraint("school_id", "label", name="uq_year_per_school"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
     school_id: Mapped[int] = mapped_column(ForeignKey("schools.id", ondelete="CASCADE"))
     label: Mapped[str] = mapped_column(String(20), nullable=False)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -125,6 +169,9 @@ class Term(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
     academic_year_id: Mapped[int] = mapped_column(
         ForeignKey("academic_years.id", ondelete="CASCADE")
     )
@@ -143,6 +190,9 @@ class Grade(Base):
     __table_args__ = (UniqueConstraint("school_id", "level", name="uq_grade_level"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
     school_id: Mapped[int] = mapped_column(ForeignKey("schools.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(60), nullable=False)
     level: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -164,6 +214,9 @@ class Section(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
     grade_id: Mapped[int] = mapped_column(ForeignKey("grades.id", ondelete="CASCADE"))
     academic_year_id: Mapped[int] = mapped_column(
         ForeignKey("academic_years.id", ondelete="CASCADE")
@@ -191,6 +244,9 @@ class Subject(Base):
     __table_args__ = (UniqueConstraint("school_id", "code", name="uq_subject_code"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
     school_id: Mapped[int] = mapped_column(ForeignKey("schools.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(80), nullable=False)
     code: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -202,9 +258,13 @@ class User(Base):
     """A login. Every stakeholder authenticates through this table."""
 
     __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("tenant_id", "email", name="uq_user_email_per_tenant"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(160), nullable=False)
     role: Mapped[Role] = mapped_column(Enum(Role, native_enum=False), nullable=False)
@@ -224,12 +284,18 @@ class User(Base):
 
 class Teacher(Base):
     __tablename__ = "teachers"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "employee_code", name="uq_teacher_code_per_tenant"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), unique=True
     )
-    employee_code: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    employee_code: Mapped[str] = mapped_column(String(32), nullable=False)
     department: Mapped[str | None] = mapped_column(String(80))
     joined_on: Mapped[date | None] = mapped_column(Date)
 
@@ -248,8 +314,14 @@ class Teacher(Base):
 
 class Student(Base):
     __tablename__ = "students"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "admission_no", name="uq_admission_per_tenant"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
     user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), unique=True
     )
@@ -259,7 +331,7 @@ class Student(Base):
     section_id: Mapped[int] = mapped_column(
         ForeignKey("sections.id", ondelete="CASCADE"), index=True
     )
-    admission_no: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    admission_no: Mapped[str] = mapped_column(String(32), nullable=False)
     roll_no: Mapped[int] = mapped_column(Integer, nullable=False)
     full_name: Mapped[str] = mapped_column(String(160), nullable=False)
     date_of_birth: Mapped[date | None] = mapped_column(Date)
@@ -293,6 +365,9 @@ class TeacherAssignment(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
     teacher_id: Mapped[int] = mapped_column(
         ForeignKey("teachers.id", ondelete="CASCADE"), index=True
     )
@@ -317,6 +392,9 @@ class Assessment(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     assessment_type: Mapped[AssessmentType] = mapped_column(
         Enum(AssessmentType, native_enum=False), nullable=False
@@ -352,6 +430,9 @@ class Score(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
     assessment_id: Mapped[int] = mapped_column(
         ForeignKey("assessments.id", ondelete="CASCADE"), index=True
     )
@@ -381,6 +462,9 @@ class Attendance(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
     student_id: Mapped[int] = mapped_column(
         ForeignKey("students.id", ondelete="CASCADE"), index=True
     )
@@ -401,6 +485,9 @@ class Remark(Base):
     __tablename__ = "remarks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
     student_id: Mapped[int] = mapped_column(
         ForeignKey("students.id", ondelete="CASCADE"), index=True
     )

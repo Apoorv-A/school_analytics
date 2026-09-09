@@ -10,7 +10,9 @@ from __future__ import annotations
 import statistics
 from dataclasses import dataclass
 
-from app.config import settings
+from app.config import settings as app_settings
+from app.tenant.context import get_tenant_context
+from app.tenant.settings import TenantSettings
 
 # CBSE-style bands: (minimum percentage, grade label, descriptor)
 GRADE_BANDS: tuple[tuple[float, str, str], ...] = (
@@ -40,6 +42,36 @@ DISTRIBUTION_BUCKETS: tuple[tuple[str, float, float], ...] = (
 # per-assessment thresholds in `trend_label`.
 TERM_SLIDE_SHARP = -5.0
 TERM_SLIDE_MILD = -2.0
+
+
+def active_settings() -> TenantSettings:
+    ctx = get_tenant_context()
+    if ctx is not None:
+        return ctx.settings
+    return TenantSettings(
+        pass_percentage=app_settings.pass_percentage,
+        at_risk_percentage=app_settings.at_risk_percentage,
+        at_risk_attendance=app_settings.at_risk_attendance,
+    )
+
+
+class _SettingsProxy:
+    """Backward-compatible access to threshold settings for query code."""
+
+    @property
+    def pass_percentage(self) -> float:
+        return active_settings().pass_percentage
+
+    @property
+    def at_risk_percentage(self) -> float:
+        return active_settings().at_risk_percentage
+
+    @property
+    def at_risk_attendance(self) -> float:
+        return active_settings().at_risk_attendance
+
+
+settings = _SettingsProxy()
 
 
 def percentage(marks_obtained: float | None, max_marks: float) -> float | None:
@@ -213,7 +245,7 @@ def grade_counts(values: list[float | None]) -> list[tuple[str, int]]:
 
 
 def pass_rate(values: list[float | None], threshold: float | None = None) -> float | None:
-    limit = settings.pass_percentage if threshold is None else threshold
+    limit = active_settings().pass_percentage if threshold is None else threshold
     clean = [v for v in values if v is not None]
     if not clean:
         return None
@@ -283,10 +315,11 @@ def assess_risk(
     score = 0
 
     if average_pct is not None:
-        if average_pct < settings.pass_percentage:
+        cfg = active_settings()
+        if average_pct < cfg.pass_percentage:
             reasons.append(f"Average {average_pct:.1f}% is below the pass mark")
             score += 3
-        elif average_pct < settings.at_risk_percentage:
+        elif average_pct < cfg.at_risk_percentage:
             reasons.append(f"Average {average_pct:.1f}% is in the at-risk band")
             score += 2
 
@@ -307,9 +340,9 @@ def assess_risk(
             reasons.append("Scores are trending downward term on term")
             score += 1
 
-    if attendance_pct is not None and attendance_pct < settings.at_risk_attendance:
+    if attendance_pct is not None and attendance_pct < active_settings().at_risk_attendance:
         reasons.append(f"Attendance is {attendance_pct:.0f}%")
-        score += 3 if attendance_pct < settings.at_risk_attendance - 10 else 2
+        score += 3 if attendance_pct < active_settings().at_risk_attendance - 10 else 2
 
     if score >= 3:
         level = "high"
@@ -325,7 +358,7 @@ def performance_tone(pct: float | None) -> str:
         return "neutral"
     if pct >= 75:
         return "positive"
-    if pct >= settings.at_risk_percentage:
+    if pct >= active_settings().at_risk_percentage:
         return "neutral"
     return "negative"
 

@@ -4,19 +4,27 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import settings
 
 _is_sqlite = settings.database_url.startswith("sqlite")
+_is_postgres = settings.database_url.startswith("postgresql")
+
+_connect_args: dict = {}
+if _is_sqlite:
+    _connect_args["check_same_thread"] = False
 
 engine = create_engine(
     settings.database_url,
     echo=False,
     future=True,
-    connect_args={"check_same_thread": False} if _is_sqlite else {},
+    connect_args=_connect_args,
+    pool_pre_ping=_is_postgres,
+    pool_size=10 if _is_postgres else 5,
+    max_overflow=20 if _is_postgres else 0,
 )
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
@@ -48,5 +56,19 @@ def get_db() -> Generator[Session, None, None]:
 def init_db() -> None:
     """Create any missing tables. Model modules must be imported first."""
     from app import models  # noqa: F401  (registers mappers on Base.metadata)
+    from app.tenant.rls import apply_rls_policies, configure_rls
 
+    configure_rls(engine)
     Base.metadata.create_all(bind=engine)
+    if _is_postgres:
+        with engine.begin() as connection:
+            apply_rls_policies(connection)
+
+
+def check_db_connection() -> bool:
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False

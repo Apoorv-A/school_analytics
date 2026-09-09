@@ -187,8 +187,11 @@ class TestParentScope:
         from app.analytics import queries
         from app.db import SessionLocal
         from app.deps import get_access_scope
-        from app.models import Student, User
+        from app.models import Student, Tenant, User
         from app.schemas import FilterParams
+        from app.tenant.context import TenantContext, set_tenant_context
+        from app.tenant.settings import TenantSettings
+        from seed.generate import SUNRISE_HOST
 
         class _Request:
             query_params: dict[str, str] = {}
@@ -197,16 +200,31 @@ class TestParentScope:
             guardian = session.scalars(
                 select(User).where(User.email == parent_context["email"])
             ).one()
-            scope = get_access_scope(_Request(), session, guardian)
-            cohort = scope.cohort_view()
-            assert cohort.aggregate_only is True
-            with pytest.raises(HTTPException) as refused:
-                queries.student_standings(session, FilterParams(), cohort)
-            assert refused.value.status_code == 403
-            child = session.get(Student, parent_context["child_id"])
-            summaries = queries.student_subject_summaries(
-                session, child, FilterParams(), scope
+            tenant = session.scalars(
+                select(Tenant).where(Tenant.key == "sunrise")
+            ).one()
+            set_tenant_context(
+                TenantContext(
+                    tenant_id=tenant.id,
+                    tenant_key=tenant.key,
+                    display_name=tenant.display_name,
+                    hostname=SUNRISE_HOST,
+                    settings=TenantSettings.from_json(tenant.settings_json),
+                )
             )
+            try:
+                scope = get_access_scope(_Request(), session, guardian)
+                cohort = scope.cohort_view()
+                assert cohort.aggregate_only is True
+                with pytest.raises(HTTPException) as refused:
+                    queries.student_standings(session, FilterParams(), cohort)
+                assert refused.value.status_code == 403
+                child = session.get(Student, parent_context["child_id"])
+                summaries = queries.student_subject_summaries(
+                    session, child, FilterParams(), scope
+                )
+            finally:
+                set_tenant_context(None)
             assert summaries
             assert any(s.cohort and s.cohort > 1 for s in summaries)
 

@@ -1,0 +1,201 @@
+charts:
+- key: student.kpis
+  title: Performance summary
+  kind: kpi
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+- key: student.subject_trend
+  title: Scores through the year
+  kind: chart
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+- key: student.vs_class
+  title: You versus the class
+  kind: chart
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+- key: student.subject_radar
+  title: Subject strength profile
+  kind: chart
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+- key: student.grade_mix
+  title: Grade spread across subjects
+  kind: chart
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+- key: student.attendance
+  title: Attendance by month
+  kind: chart
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+- key: student.term_progress
+  title: Term on term progress
+  kind: chart
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+- key: student.subject_table
+  title: Subject breakdown
+  kind: table
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+- key: student.assessment_table
+  title: Every assessment
+  kind: table
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+- key: student.remarks
+  title: Teacher remarks
+  kind: timeline
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+- key: section.kpis
+  title: Classroom summary
+  kind: kpi
+  roles:
+  - admin
+  - teacher
+- key: section.distribution
+  title: Score distribution
+  kind: chart
+  roles:
+  - admin
+  - teacher
+- key: section.assessment_averages
+  title: Average by assessment
+  kind: chart
+  roles:
+  - admin
+  - teacher
+- key: section.subject_averages
+  title: Average by subject
+  kind: chart
+  roles:
+  - admin
+  - teacher
+- key: section.heatmap
+  title: Student by subject heatmap
+  kind: heatmap
+  roles:
+  - admin
+  - teacher
+- key: section.grade_mix
+  title: Grade distribution
+  kind: chart
+  roles:
+  - admin
+  - teacher
+- key: section.attendance
+  title: Attendance against performance
+  kind: chart
+  roles:
+  - admin
+  - teacher
+- key: section.students_table
+  title: All students
+  kind: table
+  roles:
+  - admin
+  - teacher
+- key: section.at_risk
+  title: Students needing attention
+  kind: table
+  roles:
+  - admin
+  - teacher
+- key: section.toppers
+  title: Top performers
+  kind: table
+  roles:
+  - admin
+  - teacher
+- key: school.kpis
+  title: School summary
+  kind: kpi
+  roles:
+  - admin
+- key: school.grade_averages
+  title: Performance by grade
+  kind: chart
+  roles:
+  - admin
+- key: school.subject_averages
+  title: Performance by subject
+  kind: chart
+  roles:
+  - admin
+- key: school.assessment_type_averages
+  title: Performance by assessment type
+  kind: chart
+  roles:
+  - admin
+- key: school.section_matrix
+  title: Class by subject heatmap
+  kind: heatmap
+  roles:
+  - admin
+- key: school.term_trend
+  title: Term trend by grade
+  kind: chart
+  roles:
+  - admin
+- key: school.pass_rate
+  title: Pass rate
+  kind: chart
+  roles:
+  - admin
+- key: school.distribution
+  title: School score distribution
+  kind: chart
+  roles:
+  - admin
+- key: school.section_leaderboard
+  title: Class leaderboard
+  kind: table
+  roles:
+  - admin
+- key: school.at_risk
+  title: School-wide at-risk cohort
+  kind: table
+  roles:
+  - admin
+- key: school.attendance_scatter
+  title: Attendance versus performance
+  kind: chart
+  roles:
+  - admin
+- key: school.teacher_effectiveness
+  title: Results by teacher
+  kind: table
+  roles:
+  - admin

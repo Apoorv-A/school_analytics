@@ -215,6 +215,7 @@ def student_detail(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Student not found."
         )
+    scope.assert_tenant_record(student.tenant_id, "Student")
     page = STUDENT_PAGES["overview"]
     return render_dashboard(
         request,

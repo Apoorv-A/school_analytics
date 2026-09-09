@@ -18,6 +18,7 @@ from app.deps import AccessScope
 from app.models import AssessmentType, Role, School, Student
 from app.schemas import FilterOptions, FilterParams
 from app.templating import templates
+from app.tenant.context import require_tenant_context
 
 PORTAL_HOME: dict[Role, str] = {
     Role.ADMIN: "/admin",
@@ -102,7 +103,10 @@ FILTER_CONTROLS: dict[str, tuple[str, ...]] = {
 
 
 def _school(db: Session) -> School | None:
-    return db.scalars(select(School).limit(1)).first()
+    tenant_ctx = require_tenant_context()
+    return db.scalars(
+        select(School).where(School.tenant_id == tenant_ctx.tenant_id).limit(1)
+    ).first()
 
 
 def _rendered_filters(visible: list[str], options: FilterOptions) -> list[str]:

@@ -1,0 +1,32 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/apoorv-a/school-analytics
+  tag: ""
+  pullPolicy: IfNotPresent
+
+environment: dev
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts: []
+
+database:
+  url: ""
+
+secretName: school-analytics-secrets
+
+operator:
+  enabled: true
+  image:
+    repository: ghcr.io/apoorv-a/school-analytics
+    tag: ""
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi

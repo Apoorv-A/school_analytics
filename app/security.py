@@ -51,22 +51,27 @@ def _serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(settings.secret_key, salt=_SESSION_SALT)
 
 
-def create_session_token(user_id: int, role: str) -> str:
-    return _serializer().dumps({"uid": user_id, "role": role})
+def create_session_token(user_id: int, role: str, tenant_id: str) -> str:
+    return _serializer().dumps({"uid": user_id, "role": role, "tid": tenant_id})
 
 
-def read_session_token(token: str) -> dict[str, object] | None:
+def read_session_token(
+    token: str, max_age: int | None = None
+) -> dict[str, object] | None:
     """Return the token payload, or None if it is missing, expired, or tampered with."""
     if not token:
         return None
+    age = settings.session_max_age if max_age is None else max_age
     try:
-        payload = _serializer().loads(token, max_age=settings.session_max_age)
+        payload = _serializer().loads(token, max_age=age)
     except SignatureExpired:
         return None
     except BadSignature:
         logger.warning("Rejected a session cookie with an invalid signature.")
         return None
     if not isinstance(payload, dict) or not isinstance(payload.get("uid"), int):
+        return None
+    if not isinstance(payload.get("tid"), str):
         return None
     return payload
 

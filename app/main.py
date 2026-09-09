@@ -11,12 +11,13 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.config import settings
-from app.db import init_db
+from app.db import check_db_connection, init_db
 from app.deps import NotAuthenticatedError, get_optional_user
 from app.portals import PORTAL_HOME
-from app.routers import admin, auth, charts, exports, parent, student, teacher
+from app.routers import admin, auth, charts, exports, parent, platform, student, teacher
 from app.routers.auth import clear_session_cookie
 from app.templating import templates
+from app.tenant.middleware import TenantMiddleware
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -40,6 +41,8 @@ app = FastAPI(
     redoc_url=None,
 )
 
+app.add_middleware(TenantMiddleware)
+
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
 
 app.include_router(auth.router)
@@ -47,6 +50,7 @@ app.include_router(parent.router)
 app.include_router(student.router)
 app.include_router(teacher.router)
 app.include_router(admin.router)
+app.include_router(platform.router)
 app.include_router(charts.router)
 app.include_router(exports.router)
 
@@ -103,7 +107,26 @@ def root(request: Request) -> Response:
 
 @app.get("/healthz", include_in_schema=False)
 def healthz() -> dict[str, str]:
-    return {"status": "ok", "version": __version__}
+    db_ok = check_db_connection()
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "version": __version__,
+        "database": "ok" if db_ok else "unavailable",
+    }
+
+
+@app.get("/api/tenant/context", include_in_schema=False)
+def tenant_context(request: Request) -> Response:
+    tenant = getattr(request.state, "tenant", None)
+    if tenant is None:
+        return JSONResponse({"detail": "Not found."}, status_code=404)
+    return JSONResponse(
+        {
+            "tenant": tenant.tenant_key,
+            "displayName": tenant.display_name,
+            "hostname": tenant.hostname,
+        }
+    )
 
 
 @app.exception_handler(status.HTTP_404_NOT_FOUND)

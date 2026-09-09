@@ -7,6 +7,7 @@ subjects the caller may read, so a handler cannot accidentally widen access.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 
@@ -28,6 +29,7 @@ from app.models import (
 )
 from app.schemas import FilterParams
 from app.security import read_session_token
+from app.tenant.context import get_tenant_context, require_tenant_context
 
 
 class NotAuthenticatedError(Exception):
@@ -37,12 +39,18 @@ class NotAuthenticatedError(Exception):
 def get_current_user(
     request: Request, db: Session = Depends(get_db)
 ) -> User:
+    tenant_ctx = require_tenant_context()
     token = request.cookies.get(settings.session_cookie_name, "")
-    payload = read_session_token(token)
+    payload = read_session_token(token, max_age=tenant_ctx.settings.session_max_age)
     if payload is None:
+        raise NotAuthenticatedError
+    token_tid = payload.get("tid")
+    if token_tid != str(tenant_ctx.tenant_id):
         raise NotAuthenticatedError
     user = db.get(User, payload["uid"])
     if user is None or not user.is_active:
+        raise NotAuthenticatedError
+    if user.tenant_id != tenant_ctx.tenant_id:
         raise NotAuthenticatedError
     # A role change since the cookie was issued invalidates the session.
     if payload.get("role") != user.role.value:
@@ -76,14 +84,12 @@ def require_roles(*roles: Role):
 class AccessScope:
     """The set of records a caller may read.
 
-    A `None` collection means unrestricted (administrators only). Any other value is
-    an explicit allow-list, and the `assert_*` helpers refuse anything outside it.
-
-    `section_subjects` is the finest-grained rule: a teacher who teaches only
-    Mathematics to 7-B may read Mathematics in 7-B, not Science in 7-B. It is `None`
-    for callers whose access is bounded by student instead (parents and students).
+    A `None` collection means unrestricted within the tenant (administrators only).
+    Any other value is an explicit allow-list, and the `assert_*` helpers refuse
+    anything outside it.
     """
 
+    tenant_id: uuid.UUID
     user: User
     academic_year: AcademicYear | None
     student_ids: frozenset[int] | None
@@ -185,6 +191,13 @@ class AccessScope:
                 detail="This view may only return aggregated results.",
             )
 
+    def assert_tenant_record(self, record_tenant_id: uuid.UUID, label: str = "Record") -> None:
+        if record_tenant_id != self.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"{label} not found.",
+            )
+
     def resolve_section_id(self, section_id: int | None) -> int:
         if section_id is not None:
             self.assert_section(section_id)
@@ -198,27 +211,34 @@ class AccessScope:
 
 
 def _current_academic_year(
-    db: Session, requested_id: int | None = None
+    db: Session, tenant_id: uuid.UUID, requested_id: int | None = None
 ) -> AcademicYear | None:
     if requested_id is not None:
         year = db.get(AcademicYear, requested_id)
-        if year is not None:
+        if year is not None and year.tenant_id == tenant_id:
             return year
     stmt = (
         select(AcademicYear)
+        .where(AcademicYear.tenant_id == tenant_id)
         .order_by(AcademicYear.is_current.desc(), AcademicYear.start_date.desc())
         .limit(1)
     )
     return db.scalars(stmt).first()
 
 
-def _students_in_sections(db: Session, section_ids: Iterable[int]) -> list[Student]:
+def _students_in_sections(
+    db: Session, tenant_id: uuid.UUID, section_ids: Iterable[int]
+) -> list[Student]:
     ids = list(section_ids)
     if not ids:
         return []
     stmt = (
         select(Student)
-        .where(Student.section_id.in_(ids), Student.is_active.is_(True))
+        .where(
+            Student.tenant_id == tenant_id,
+            Student.section_id.in_(ids),
+            Student.is_active.is_(True),
+        )
         .order_by(Student.section_id, Student.roll_no)
     )
     return list(db.scalars(stmt))
@@ -230,14 +250,17 @@ def get_access_scope(
     user: User = Depends(get_current_user),
 ) -> AccessScope:
     """Build the caller's access scope from their role and their own links."""
+    tenant_ctx = require_tenant_context()
+    tenant_id = tenant_ctx.tenant_id
     requested_year = request.query_params.get("academic_year_id")
     year_id: int | None = None
     if requested_year is not None and requested_year.isdigit():
         year_id = int(requested_year)
-    academic_year = _current_academic_year(db, year_id)
+    academic_year = _current_academic_year(db, tenant_id, year_id)
 
     if user.role is Role.ADMIN:
         return AccessScope(
+            tenant_id=tenant_id,
             user=user,
             academic_year=academic_year,
             student_ids=None,
@@ -249,7 +272,7 @@ def get_access_scope(
     if user.role is Role.TEACHER:
         teacher = db.scalars(
             select(Teacher)
-            .where(Teacher.user_id == user.id)
+            .where(Teacher.user_id == user.id, Teacher.tenant_id == tenant_id)
             .options(joinedload(Teacher.assignments))
         ).unique().first()
         if teacher is None:
@@ -259,7 +282,8 @@ def get_access_scope(
             )
         assignment_rows = db.execute(
             select(TeacherAssignment.section_id, TeacherAssignment.subject_id).where(
-                TeacherAssignment.teacher_id == teacher.id
+                TeacherAssignment.teacher_id == teacher.id,
+                TeacherAssignment.tenant_id == tenant_id,
             )
         ).all()
         section_subjects: dict[int, set[int]] = {}
@@ -268,10 +292,17 @@ def get_access_scope(
 
         # A class teacher also oversees every subject in their own homeroom.
         homeroom_ids = set(
-            db.scalars(select(Section.id).where(Section.class_teacher_id == teacher.id))
+            db.scalars(
+                select(Section.id).where(
+                    Section.class_teacher_id == teacher.id,
+                    Section.tenant_id == tenant_id,
+                )
+            )
         )
         if homeroom_ids:
-            all_subject_ids = set(db.scalars(select(Subject.id)))
+            all_subject_ids = set(
+                db.scalars(select(Subject.id).where(Subject.tenant_id == tenant_id))
+            )
             for section_id in homeroom_ids:
                 section_subjects.setdefault(section_id, set()).update(all_subject_ids)
 
@@ -279,8 +310,9 @@ def get_access_scope(
         subject_ids: set[int] = set()
         for subjects in section_subjects.values():
             subject_ids |= subjects
-        students = _students_in_sections(db, section_ids)
+        students = _students_in_sections(db, tenant_id, section_ids)
         return AccessScope(
+            tenant_id=tenant_id,
             user=user,
             academic_year=academic_year,
             student_ids=frozenset(s.id for s in students),
@@ -297,11 +329,16 @@ def get_access_scope(
         children = list(
             db.scalars(
                 select(Student)
-                .where(Student.guardian_user_id == user.id, Student.is_active.is_(True))
+                .where(
+                    Student.guardian_user_id == user.id,
+                    Student.tenant_id == tenant_id,
+                    Student.is_active.is_(True),
+                )
                 .order_by(Student.full_name)
             )
         )
         return AccessScope(
+            tenant_id=tenant_id,
             user=user,
             academic_year=academic_year,
             student_ids=frozenset(c.id for c in children),
@@ -312,7 +349,11 @@ def get_access_scope(
 
     # Student: self only.
     self_record = db.scalars(
-        select(Student).where(Student.user_id == user.id, Student.is_active.is_(True))
+        select(Student).where(
+            Student.user_id == user.id,
+            Student.tenant_id == tenant_id,
+            Student.is_active.is_(True),
+        )
     ).first()
     if self_record is None:
         raise HTTPException(
@@ -320,6 +361,7 @@ def get_access_scope(
             detail="This account is not linked to a student record.",
         )
     return AccessScope(
+        tenant_id=tenant_id,
         user=user,
         academic_year=academic_year,
         student_ids=frozenset({self_record.id}),

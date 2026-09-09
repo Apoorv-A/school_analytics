@@ -35,6 +35,8 @@ from app.models import (
     Subject,
     Teacher,
     TeacherAssignment,
+    Tenant,
+    TenantDomain,
     Term,
     User,
 )
@@ -45,6 +47,24 @@ RANDOM_SEED = 20240615
 # Shared password for the synthetic demo accounts this script creates. It exists only
 # so a fresh local database is immediately explorable; no real account uses it.
 DEMO_PASSWORD = "Demo@12345"  # noqa: S105
+
+SUNRISE_HOST = "sunrise.localhost"
+HORIZON_HOST = "horizon.localhost"
+
+TENANT_SETTINGS = {
+    "academics": {
+        "passPercentage": 33.0,
+        "atRiskPercentage": 45.0,
+        "atRiskAttendance": 75.0,
+    },
+    "features": {
+        "exports": True,
+        "remarks": True,
+        "parentPortal": True,
+        "studentPortal": True,
+    },
+    "auth": {"mfaRequiredRoles": ["admin", "teacher"], "sessionMaxAge": 28800},
+}
 
 SCHOOL_NAME = "Sunrise Public School"
 SCHOOL_CITY = "Pune"
@@ -223,8 +243,83 @@ def _wipe_rows(db: Session) -> None:
     for model in (
         Remark, Attendance, Score, Assessment, TeacherAssignment,
         Student, Section, Grade, Subject, Teacher, Term, AcademicYear, School, User,
+        TenantDomain, Tenant,
     ):
         db.execute(delete(model))
+    db.commit()
+
+
+def _seed_horizon_tenant(db: Session, password_hash: str) -> None:
+    """Minimal second tenant to prove tenant-scoped uniqueness and isolation."""
+    tenant = Tenant(
+        key="horizon",
+        display_name="Horizon Academy",
+        status="active",
+        settings_json={
+            **TENANT_SETTINGS,
+            "academics": {
+                "passPercentage": 40.0,
+                "atRiskPercentage": 50.0,
+                "atRiskAttendance": 80.0,
+            },
+        },
+    )
+    db.add(tenant)
+    db.flush()
+    db.add(
+        TenantDomain(tenant_id=tenant.id, hostname=HORIZON_HOST, is_primary=True)
+    )
+    tenant_id = tenant.id
+
+    school = School(
+        tenant_id=tenant_id,
+        name="Horizon Academy",
+        city="Mumbai",
+        board="ICSE",
+    )
+    db.add(school)
+    db.flush()
+
+    year = AcademicYear(
+        tenant_id=tenant_id,
+        school_id=school.id,
+        label=YEAR_LABEL,
+        start_date=YEAR_START,
+        end_date=YEAR_END,
+        is_current=True,
+    )
+    db.add(year)
+    db.flush()
+
+    term = Term(
+        tenant_id=tenant_id,
+        academic_year_id=year.id,
+        name="Term 1",
+        sequence=1,
+        start_date=TERMS[0][2],
+        end_date=TERMS[0][3],
+    )
+    db.add(term)
+    db.flush()
+
+    subject = Subject(
+        tenant_id=tenant_id, school_id=school.id, name="Mathematics", code="MATH"
+    )
+    db.add(subject)
+    db.flush()
+
+    grade = Grade(tenant_id=tenant_id, school_id=school.id, name="Grade 8", level=8)
+    db.add(grade)
+    db.flush()
+
+    admin = User(
+        tenant_id=tenant_id,
+        email="principal@sunrise.edu",
+        password_hash=password_hash,
+        full_name="Horizon Principal",
+        role=Role.ADMIN,
+    )
+    db.add(admin)
     db.commit()
 
 
@@ -234,7 +329,7 @@ def generate(reset: bool = False) -> dict[str, object]:
 
     with SessionLocal() as db:
         if reset:
-            _wipe_rows(db)
+            reset_database()
         elif db.scalars(select(School).limit(1)).first() is not None:
             raise SystemExit(
                 "Database already contains data. Re-run with --reset to rebuild it."
@@ -242,11 +337,34 @@ def generate(reset: bool = False) -> dict[str, object]:
 
         password_hash = hash_password(DEMO_PASSWORD)
 
-        school = School(name=SCHOOL_NAME, city=SCHOOL_CITY, board=SCHOOL_BOARD)
+        tenant = Tenant(
+            key="sunrise",
+            display_name="Sunrise Public School",
+            status="active",
+            settings_json=TENANT_SETTINGS,
+        )
+        db.add(tenant)
+        db.flush()
+        db.add(
+            TenantDomain(
+                tenant_id=tenant.id,
+                hostname=SUNRISE_HOST,
+                is_primary=True,
+            )
+        )
+        tenant_id = tenant.id
+
+        school = School(
+            tenant_id=tenant_id,
+            name=SCHOOL_NAME,
+            city=SCHOOL_CITY,
+            board=SCHOOL_BOARD,
+        )
         db.add(school)
         db.flush()
 
         year = AcademicYear(
+            tenant_id=tenant_id,
             school_id=school.id,
             label=YEAR_LABEL,
             start_date=YEAR_START,
@@ -259,6 +377,7 @@ def generate(reset: bool = False) -> dict[str, object]:
         terms = []
         for name, sequence, start, end in TERMS:
             term = Term(
+                tenant_id=tenant_id,
                 academic_year_id=year.id,
                 name=name,
                 sequence=sequence,
@@ -271,13 +390,14 @@ def generate(reset: bool = False) -> dict[str, object]:
 
         subjects: dict[str, Subject] = {}
         for name, code, _department in SUBJECTS:
-            subject = Subject(school_id=school.id, name=name, code=code)
+            subject = Subject(tenant_id=tenant_id, school_id=school.id, name=name, code=code)
             db.add(subject)
             subjects[code] = subject
         db.flush()
         subject_codes = list(subjects)
 
         principal = User(
+            tenant_id=tenant_id,
             email="principal@sunrise.edu",
             password_hash=password_hash,
             full_name="Dr. Kavita Menon",
@@ -289,6 +409,7 @@ def generate(reset: bool = False) -> dict[str, object]:
         teachers: list[Teacher] = []
         for index, (name, department) in enumerate(TEACHER_NAMES, start=1):
             user = User(
+                tenant_id=tenant_id,
                 email=f"{_slugify_name(name)}@sunrise.edu",
                 password_hash=password_hash,
                 full_name=name,
@@ -298,6 +419,7 @@ def generate(reset: bool = False) -> dict[str, object]:
             db.add(user)
             db.flush()
             teacher = Teacher(
+                tenant_id=tenant_id,
                 user_id=user.id,
                 employee_code=f"EMP{index:03d}",
                 department=department,
@@ -309,7 +431,7 @@ def generate(reset: bool = False) -> dict[str, object]:
 
         grades: list[Grade] = []
         for level in GRADE_LEVELS:
-            grade = Grade(school_id=school.id, name=f"Grade {level}", level=level)
+            grade = Grade(tenant_id=tenant_id, school_id=school.id, name=f"Grade {level}", level=level)
             db.add(grade)
             grades.append(grade)
         db.flush()
@@ -323,6 +445,7 @@ def generate(reset: bool = False) -> dict[str, object]:
                 class_teacher = homeroom_pool[homeroom_index % len(homeroom_pool)]
                 homeroom_index += 1
                 section = Section(
+                    tenant_id=tenant_id,
                     grade_id=grade.id,
                     academic_year_id=year.id,
                     name=section_name,
@@ -345,6 +468,7 @@ def generate(reset: bool = False) -> dict[str, object]:
                 teacher = pool[rng.randrange(len(pool))]
                 db.add(
                     TeacherAssignment(
+                        tenant_id=tenant_id,
                         teacher_id=teacher.id,
                         subject_id=subject.id,
                         section_id=section.id,
@@ -374,6 +498,7 @@ def generate(reset: bool = False) -> dict[str, object]:
                 used_emails.add(email)
 
                 student_user = User(
+                    tenant_id=tenant_id,
                     email=email,
                     password_hash=password_hash,
                     full_name=full_name,
@@ -383,6 +508,7 @@ def generate(reset: bool = False) -> dict[str, object]:
 
                 guardian_email = email.replace("@student.", "@parent.")
                 guardian_user = User(
+                    tenant_id=tenant_id,
                     email=guardian_email,
                     password_hash=password_hash,
                     full_name=f"{rng.choice(FIRST_NAMES_M + FIRST_NAMES_F)} {last}",
@@ -394,6 +520,7 @@ def generate(reset: bool = False) -> dict[str, object]:
 
                 grade_level = next(g.level for g in grades if g.id == section.grade_id)
                 student = Student(
+                    tenant_id=tenant_id,
                     user_id=student_user.id,
                     guardian_user_id=guardian_user.id,
                     section_id=section.id,
@@ -442,6 +569,7 @@ def generate(reset: bool = False) -> dict[str, object]:
                         # Each paper has its own difficulty, which shifts the whole class.
                         difficulty_shift = rng.gauss(0.0, 4.5)
                         assessment = Assessment(
+                            tenant_id=tenant_id,
                             name=f"{subject.name} {kind.label} {slot + 1} ({term.name})",
                             assessment_type=kind,
                             subject_id=subject.id,
@@ -474,6 +602,7 @@ def generate(reset: bool = False) -> dict[str, object]:
                             marks = None if is_absent else round(max_marks * pct / 100, 1)
                             db.add(
                                 Score(
+                                    tenant_id=tenant_id,
                                     assessment_id=assessment.id,
                                     student_id=student.id,
                                     marks_obtained=marks,
@@ -505,6 +634,7 @@ def generate(reset: bool = False) -> dict[str, object]:
                         status = AttendanceStatus.ABSENT
                     db.add(
                         Attendance(
+                            tenant_id=tenant_id,
                             student_id=student.id,
                             term_id=term.id,
                             on_date=day,
@@ -561,6 +691,7 @@ def generate(reset: bool = False) -> dict[str, object]:
                     )
                     db.add(
                         Remark(
+                            tenant_id=tenant_id,
                             student_id=student.id,
                             teacher_id=teacher_id,
                             term_id=term.id,
@@ -599,6 +730,8 @@ def generate(reset: bool = False) -> dict[str, object]:
             family_name = demo_student.full_name.split()[-1]
             sibling.full_name = f"{sibling.full_name.split()[0]} {family_name}"
             db.commit()
+
+        _seed_horizon_tenant(db, password_hash)
 
         summary = {
             "school": SCHOOL_NAME,

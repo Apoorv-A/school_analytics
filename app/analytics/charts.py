@@ -18,6 +18,7 @@ from app.analytics import metrics, queries
 from app.deps import AccessScope
 from app.models import Role, Student
 from app.schemas import FilterParams
+from app.tenant.features import require_remarks_enabled
 
 ChartHandler = Callable[[Session, FilterParams, AccessScope], dict]
 
@@ -57,6 +58,7 @@ def _target_student(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Student not found."
         )
+    scope.assert_tenant_record(student.tenant_id, "Student")
     return student
 
 
@@ -401,10 +403,13 @@ def student_assessment_table(
 
 
 def student_remarks(db: Session, filters: FilterParams, scope: AccessScope) -> dict:
+    require_remarks_enabled()
     student = _target_student(db, filters, scope)
     return {
         "kind": "timeline",
-        "items": queries.student_remarks(db, student.id, filters),
+        "items": queries.student_remarks(
+            db, student.id, filters, scope.tenant_id
+        ),
         "meta": {"student": student.full_name},
     }
 
