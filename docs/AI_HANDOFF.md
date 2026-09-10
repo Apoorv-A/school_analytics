@@ -112,6 +112,8 @@ PYTHONPATH=. python -m tenant_operator apply --config=../school-analytics-config
 
 Environment image versions live in `environments/<env>/release.yaml`, not per-tenant files.
 
+**Config CI:** `validate-config` checks out private `school_analytics` using GitHub secret `CONFIG_PR_TOKEN` on the config repo (see config repo README).
+
 ---
 
 ## Security invariants (do not break)
