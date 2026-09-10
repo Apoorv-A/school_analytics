@@ -130,6 +130,7 @@ class TestTenantScopedData:
                 "atRiskPercentage": 45.0,
                 "atRiskAttendance": 75.0,
             },
+            "image": {"tag": "0.1.0-SNAPSHOT"},
         }
         path = tmp_path / "dev.yaml"
         path.write_text(yaml.safe_dump(doc), encoding="utf-8")

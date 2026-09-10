@@ -57,7 +57,7 @@ Multi-tenant school analytics SaaS: one shared FastAPI deployment per environmen
 | `app/db.py` | SQLAlchemy engine; SQLite `NullPool` locally, pooled Postgres in production |
 | `app/deps.py` | Auth + `AccessScope` |
 | `app/analytics/` | Metrics, scoped queries, chart registry |
-| `tenant_config/models.py` | Canonical Pydantic tenant config (JSON Schema source) |
+| `tenant_config/models.py` | Canonical Pydantic tenant config (tenant/school/academics + telemetry/resources/image deploy sections) |
 | `tenant_operator/` | CLI: `validate`, `apply`, `schema` |
 | `seed/generate.py` | Demo data: **sunrise** (full) + **horizon** (minimal, overlapping email) |
 

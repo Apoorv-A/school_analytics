@@ -71,6 +71,48 @@ class DemoDataConfig(BaseModel):
     studentEmail: str | None = None
 
 
+class TelemetryConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    captureRawPayloads: bool = True
+    retention: str | int = "forever"
+
+    @field_validator("retention")
+    @classmethod
+    def _retention_value(cls, value: str | int) -> str | int:
+        if value == "forever":
+            return value
+        if isinstance(value, int) and value >= 1:
+            return value
+        if isinstance(value, str) and value.isdigit() and int(value) >= 1:
+            return int(value)
+        raise ValueError("retention must be 'forever' or a positive number of days")
+
+
+class ResourceConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    replicas: int = Field(default=1, ge=1, le=20)
+    cpu: str | None = Field(default=None, pattern=r"^([0-9]+m|[0-9]+(\.[0-9]+)?)$")
+    memory: str | None = Field(
+        default=None,
+        pattern=r"^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|K|M|G|T)?$",
+    )
+
+
+class ImageConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tag: str = Field(min_length=1)
+
+    @field_validator("tag")
+    @classmethod
+    def _not_latest(cls, value: str) -> str:
+        if value == "latest":
+            raise ValueError("image.tag must not be 'latest'")
+        return value
+
+
 class TenantConfigDocument(BaseModel):
     """One tenant in one environment."""
 
@@ -81,6 +123,9 @@ class TenantConfigDocument(BaseModel):
     academics: AcademicThresholds
     features: FeatureFlags = Field(default_factory=FeatureFlags)
     auth: AuthPolicy = Field(default_factory=AuthPolicy)
+    telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
+    resources: ResourceConfig = Field(default_factory=ResourceConfig)
+    image: ImageConfig
     demoData: DemoDataConfig | None = None
 
     @model_validator(mode="after")
