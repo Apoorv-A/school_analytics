@@ -304,6 +304,9 @@ def assess_risk(
     term_slope: float | None,
     attendance_pct: float | None,
     failing_subjects: int = 0,
+    recent_assessment_drop: float | None = None,
+    concern_remark_count: int = 0,
+    concern_remark_period: str = "in the last 30 days",
 ) -> RiskAssessment:
     """Combine performance, direction, and attendance into one flag.
 
@@ -343,6 +346,19 @@ def assess_risk(
     if attendance_pct is not None and attendance_pct < active_settings().at_risk_attendance:
         reasons.append(f"Attendance is {attendance_pct:.0f}%")
         score += 3 if attendance_pct < active_settings().at_risk_attendance - 10 else 2
+
+    if recent_assessment_drop is not None and recent_assessment_drop <= TERM_SLIDE_MILD:
+        reasons.append(
+            f"Recent assessments down {abs(recent_assessment_drop):.1f} points "
+            "vs the prior three"
+        )
+        score += 3 if recent_assessment_drop <= TERM_SLIDE_SHARP else 1
+
+    if concern_remark_count > 0:
+        reasons.append(
+            f"{concern_remark_count} concern remark(s) {concern_remark_period}"
+        )
+        score += 2 if concern_remark_count >= 2 else 1
 
     if score >= 3:
         level = "high"

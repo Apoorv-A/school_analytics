@@ -17,11 +17,23 @@ from app.portals import render_dashboard, student_subtitle
 from app.schemas import FilterParams, filter_params
 from app.tenant.features import require_parent_portal, require_student_portal
 
-STUDENT_PAGES: dict[str, dict] = {
-    "overview": {
-        "title": "Performance overview",
-        "filters": ["academic_year", "student", "term", "subject"],
-        "cards": [
+_INSIGHT_SUMMARY_CARD = {
+    "key": "student.insight_summary",
+    "title": "Progress summary",
+    "subtitle": "A family-friendly snapshot of how things are going.",
+    "span": 12,
+    "holder": "state",
+}
+
+_ADMIN_INSIGHT_CARD = {
+    "key": "student.insights",
+    "title": "Insight report",
+    "subtitle": "Evidence-backed summary with suggested actions.",
+    "span": 12,
+    "holder": "state",
+}
+
+_STUDENT_OVERVIEW_BODY_CARDS: list[dict] = [
             {"key": "student.kpis", "title": "Where things stand", "span": 12, "holder": "state"},
             {
                 "key": "student.subject_trend",
@@ -57,7 +69,28 @@ STUDENT_PAGES: dict[str, dict] = {
                 "title": "Attendance by month",
                 "span": 6,
             },
-        ],
+]
+
+
+def portal_student_overview_cards() -> list[dict]:
+    """Overview cards for parent and student portals (includes insight_summary)."""
+    return [_INSIGHT_SUMMARY_CARD, *_STUDENT_OVERVIEW_BODY_CARDS]
+
+
+def staff_student_overview_cards(*, admin: bool = False) -> list[dict]:
+    """Overview cards for staff student views without parent-only charts."""
+    cards: list[dict] = []
+    if admin:
+        cards.append(_ADMIN_INSIGHT_CARD)
+    cards.extend(_STUDENT_OVERVIEW_BODY_CARDS)
+    return cards
+
+
+STUDENT_PAGES: dict[str, dict] = {
+    "overview": {
+        "title": "Performance overview",
+        "filters": ["academic_year", "student", "term", "subject"],
+        "cards": portal_student_overview_cards(),
     },
     "subjects": {
         "title": "Subject breakdown",

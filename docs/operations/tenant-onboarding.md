@@ -18,6 +18,8 @@
 
 Set `bootstrap-admin-email` and `bootstrap-admin-password` in the environment secret on first provision only. Rotate after first login.
 
+CSV `users.csv` imports generate a unique temporary password per new account. CLI and admin apply return them once in `created_users`; ERP webhook imports do not — use admin password reset for webhook-created accounts.
+
 ## Demo data
 
 `demoData` is allowed in `dev` only. Production schema rejects synthetic demo accounts.

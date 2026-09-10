@@ -79,6 +79,11 @@ charts:
   - parent
   - student
   - teacher
+- key: student.insights
+  title: Performance insights
+  kind: insights
+  roles:
+  - admin
 - key: section.kpis
   title: Classroom summary
   kind: kpi
@@ -182,6 +187,11 @@ charts:
 - key: school.section_leaderboard
   title: Class leaderboard
   kind: table
+  roles:
+  - admin
+- key: school.section_compare
+  title: Class comparison
+  kind: chart
   roles:
   - admin
 - key: school.at_risk

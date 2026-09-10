@@ -55,7 +55,7 @@ def get_chart(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Your role cannot view this chart.",
         )
-    payload = definition.handler(db, scope.narrow(filters), scope)
+    payload = definition.handler(db, scope.narrow(filters, db), scope)
     payload.setdefault("key", definition.key)
     payload.setdefault("title", definition.title)
     return payload

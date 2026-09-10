@@ -69,6 +69,38 @@ def _rows_for(payload: dict) -> tuple[list[str], list[list[object]]]:
         ]
         return header, rows
 
+    if kind == "insights":
+        risk = payload.get("risk") or {}
+        rows = [["Risk level", risk.get("label")], ["Headline", risk.get("headline")]]
+        for reason in risk.get("reasons") or []:
+            rows.append(["Reason", reason])
+        for action in payload.get("actions") or []:
+            rows.append(["Action", action])
+        return (["Field", "Value"], rows)
+
+    if kind == "insight_summary":
+        rows: list[list[object]] = [
+            ["Summary", "Student", payload.get("student_name")],
+            ["Summary", "Headline", payload.get("headline")],
+            ["Summary", "Tone", payload.get("tone")],
+        ]
+        attendance = payload.get("attendance") or {}
+        rows.append(["Summary", "Attendance %", attendance.get("percentage")])
+        rows.append(["Summary", "Attendance detail", attendance.get("detail")])
+        for subject in payload.get("subjects") or []:
+            rows.append(
+                [
+                    "Subject",
+                    subject.get("subject"),
+                    subject.get("average"),
+                    subject.get("trend"),
+                    subject.get("status"),
+                ]
+            )
+        for suggestion in payload.get("suggestions") or []:
+            rows.append(["Suggestion", suggestion])
+        return (["Section", "Label", "Value", "Trend", "Status"], rows)
+
     if kind == "timeline":
         return (
             ["Category", "Term", "Teacher", "Subject", "Remark"],
@@ -121,7 +153,7 @@ def export_chart_csv(
             detail="Your role cannot export this data.",
         )
 
-    payload = definition.handler(db, scope.narrow(filters), scope)
+    payload = definition.handler(db, scope.narrow(filters, db), scope)
     header, rows = _rows_for(payload)
 
     buffer = io.StringIO()

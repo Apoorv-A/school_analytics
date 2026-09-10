@@ -31,3 +31,11 @@ def require_remarks_enabled() -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Remarks are disabled for this school.",
         )
+
+
+def require_bulk_import_enabled() -> None:
+    if not require_tenant_context().settings.bulk_import_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not found.",
+        )

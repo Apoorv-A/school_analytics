@@ -14,7 +14,20 @@ from app.config import settings
 from app.db import check_db_connection, init_db
 from app.deps import NotAuthenticatedError, get_optional_user
 from app.portals import PORTAL_HOME
-from app.routers import admin, auth, charts, exports, parent, platform, student, teacher
+from app.routers import (
+    admin,
+    auth,
+    charts,
+    erp_webhook,
+    exports,
+    import_api,
+    parent,
+    platform,
+    remarks,
+    student,
+    students,
+    teacher,
+)
 from app.routers.auth import clear_session_cookie
 from app.templating import templates
 from app.tenant.middleware import TenantMiddleware
@@ -53,6 +66,10 @@ app.include_router(admin.router)
 app.include_router(platform.router)
 app.include_router(charts.router)
 app.include_router(exports.router)
+app.include_router(students.router)
+app.include_router(remarks.router)
+app.include_router(import_api.router)
+app.include_router(erp_webhook.router)
 
 
 @app.middleware("http")

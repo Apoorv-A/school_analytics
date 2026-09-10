@@ -27,7 +27,7 @@ from app.models import (
     TeacherAssignment,
     User,
 )
-from app.schemas import FilterParams
+from app.schemas import _MAX_SECTION_FILTERS, _MAX_SUBJECT_FILTERS, FilterParams
 from app.security import read_session_token
 from app.tenant.context import require_tenant_context
 
@@ -134,11 +134,44 @@ class AccessScope:
     def assert_subject(self, subject_id: int | None) -> int | None:
         return self._check(self.subject_ids, subject_id, "Subject")
 
-    def narrow(self, filters: FilterParams) -> FilterParams:
+    def narrow(self, filters: FilterParams, db: Session | None = None) -> FilterParams:
         """Validate a filter set against this scope and pin it to the resolved year."""
         self.assert_student(filters.student_id)
-        self.assert_section(filters.section_id)
-        self.assert_subject(filters.subject_id)
+        section_ids = filters.resolved_section_ids() or []
+        for section_id in section_ids:
+            self.assert_section(section_id)
+        if filters.section_id is not None and not filters.section_ids:
+            self.assert_section(filters.section_id)
+
+        subject_ids = filters.resolved_subject_ids() or []
+        for subject_id in subject_ids:
+            self.assert_subject(subject_id)
+        if filters.subject_id is not None and not filters.subject_ids:
+            self.assert_subject(filters.subject_id)
+
+        if len(subject_ids) > _MAX_SUBJECT_FILTERS:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"At most {_MAX_SUBJECT_FILTERS} subjects may be selected.",
+            )
+        if len(section_ids) > _MAX_SECTION_FILTERS:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"At most {_MAX_SECTION_FILTERS} classes may be selected.",
+            )
+        if len(section_ids) > 1 and db is not None:
+            grades = db.execute(
+                select(Section.grade_id).where(
+                    Section.id.in_(section_ids),
+                    Section.tenant_id == self.tenant_id,
+                )
+            ).scalars().all()
+            if len(set(grades)) > 1:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Selected classes must belong to the same grade.",
+                )
+
         updates: dict[str, object] = {}
         if filters.academic_year_id is None and self.academic_year_id is not None:
             updates["academic_year_id"] = self.academic_year_id

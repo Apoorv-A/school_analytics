@@ -9,8 +9,28 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import School, Tenant, TenantDomain
+from app.models import Role, School, Tenant, TenantDomain, User
+from app.security import hash_password
 from tenant_config.models import TenantConfigDocument
+
+
+def _bootstrap_admin(
+    db, tenant_id: uuid.UUID, email: str, password: str, full_name: str
+) -> None:
+    existing = db.scalars(
+        select(User).where(User.tenant_id == tenant_id, User.email == email)
+    ).first()
+    if existing is not None:
+        return
+    db.add(
+        User(
+            tenant_id=tenant_id,
+            email=email,
+            full_name=full_name,
+            role=Role.ADMIN,
+            password_hash=hash_password(password),
+        )
+    )
 
 
 def reconcile_tenant(
@@ -19,6 +39,10 @@ def reconcile_tenant(
     if database_url is not None:
         os.environ["DATABASE_URL"] = database_url
         get_settings.cache_clear()
+
+    bootstrap_email = os.environ.get("BOOTSTRAP_ADMIN_EMAIL", "").strip()
+    bootstrap_password = os.environ.get("BOOTSTRAP_ADMIN_PASSWORD", "").strip()
+    bootstrap_name = os.environ.get("BOOTSTRAP_ADMIN_NAME", "School Administrator").strip()
 
     with SessionLocal() as db:
         tenant = db.scalars(
@@ -74,6 +98,15 @@ def reconcile_tenant(
             school.name = doc.school.name
             school.city = doc.school.city
             school.board = doc.school.board
+
+        if bootstrap_email and bootstrap_password:
+            _bootstrap_admin(
+                db,
+                tenant.id,
+                bootstrap_email,
+                bootstrap_password,
+                bootstrap_name or "School Administrator",
+            )
 
         db.commit()
         return {

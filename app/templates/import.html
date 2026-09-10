@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Upload CSV bundle</h2>
+  <p class="muted">Upload one or more files from <code>docs/onboarding/csv-templates/</code>. Validate before applying.</p>
+  <form id="import-form" enctype="multipart/form-data">
+    <input type="file" name="files" multiple accept=".csv,text/csv">
+    <div class="filters__actions" style="margin-top:12px">
+      <button type="button" class="btn" data-action="validate-import">Validate</button>
+      <button type="button" class="btn btn--primary" data-action="apply-import">Apply</button>
+    </div>
+  </form>
+  <pre id="import-report" class="import-report"></pre>
+</section>
+
+{% if import_runs %}
+<section class="card" style="margin-top: 16px;">
+  <h2>Recent import activity</h2>
+  <p class="muted">Audit log for CSV validation and apply runs (Phase 2 foundation for ERP sync).</p>
+  <table class="data">
+    <thead>
+      <tr>
+        <th>When</th>
+        <th>Status</th>
+        <th>Source</th>
+        <th>Files</th>
+        <th>Errors</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in import_runs %}
+      <tr>
+        <td>{{ run.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ run.status.value }}</td>
+        <td>{{ run.source }}</td>
+        <td>{{ run.file_summary or "—" }}</td>
+        <td>{{ run.error_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<script>
+(function () {
+  const form = document.getElementById("import-form");
+  const report = document.getElementById("import-report");
+  function run(endpoint) {
+    const data = new FormData(form);
+    fetch(endpoint, { method: "POST", body: data, credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (payload) {
+        report.textContent = JSON.stringify(payload, null, 2);
+        if (payload.valid || payload.applied) {
+          window.location.reload();
+        }
+      })
+      .catch(function () {
+        report.textContent = "Request failed.";
+      });
+  }
+  form.querySelector("[data-action='validate-import']").addEventListener("click", function () {
+    run("/admin/import/validate");
+  });
+  form.querySelector("[data-action='apply-import']").addEventListener("click", function () {
+    if (!window.confirm("Apply these files to the live tenant database?")) return;
+    run("/admin/import/apply");
+  });
+})();
+</script>
+{% endblock %}

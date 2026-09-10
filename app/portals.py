@@ -83,6 +83,7 @@ NAV: dict[Role, list[dict]] = {
                 {"href": "/admin/attention", "label": "Students at risk", "icon": "\u26a0"},
                 {"href": "/admin/teachers", "label": "Teaching outcomes", "icon": "\u25cf"},
                 {"href": "/admin/student", "label": "Student lookup", "icon": "\u2315"},
+                {"href": "/admin/import", "label": "Data import", "icon": "\u2191"},
             ],
         },
     ],
@@ -99,6 +100,11 @@ FILTER_CONTROLS: dict[str, tuple[str, ...]] = {
     "section": ("section_id",),
     "assessment_type": ("assessment_type",),
     "dates": ("date_from", "date_to"),
+}
+
+_LIST_FILTER_FIELDS = {
+    "subject_ids": "subject_id",
+    "section_ids": "section_id",
 }
 
 
@@ -121,6 +127,22 @@ def _rendered_filters(visible: list[str], options: FilterOptions) -> list[str]:
         "student": len(options.students) <= 1,
     }
     return [name for name in visible if not dropped.get(name, False)]
+
+
+def _normalize_filter_controls(filters: FilterParams) -> FilterParams:
+    """Map legacy multi-id query params onto the single-select filter bar."""
+    updates: dict[str, object] = {}
+    if filters.subject_id is None and filters.subject_ids:
+        if len(filters.subject_ids) == 1:
+            updates["subject_id"] = filters.subject_ids[0]
+            updates["subject_ids"] = None
+    if filters.section_id is None and filters.section_ids:
+        if len(filters.section_ids) == 1:
+            updates["section_id"] = filters.section_ids[0]
+            updates["section_ids"] = None
+    if updates:
+        return filters.model_copy(update=updates)
+    return filters
 
 
 def _pinned_filters(
@@ -149,7 +171,15 @@ def _pinned_filters(
         value = getattr(filters, field, None)
         if field in editable or value is None:
             continue
-        pinned[field] = value.value if isinstance(value, AssessmentType) else str(value)
+        if isinstance(value, list):
+            if len(value) != 1:
+                continue
+            target = _LIST_FILTER_FIELDS.get(field, field)
+            pinned[target] = str(value[0])
+        elif isinstance(value, AssessmentType):
+            pinned[field] = value.value
+        else:
+            pinned[field] = str(value)
     return pinned
 
 
@@ -166,6 +196,7 @@ def render_dashboard(
     cards: list[dict],
     pinned: Sequence[str] = (),
     intro: str | None = None,
+    require_student: bool = False,
     template: str = "dashboard.html",
     extra: dict | None = None,
 ):
@@ -176,6 +207,7 @@ def render_dashboard(
     them.
     """
     options = queries.filter_options(db, scope)
+    filters = _normalize_filter_controls(filters)
     rendered_filters = _rendered_filters(visible_filters, options)
     context = {
         "page_title": title,
@@ -186,6 +218,7 @@ def render_dashboard(
         "pinned_filters": _pinned_filters(filters, rendered_filters, pinned),
         "cards": cards,
         "intro": intro,
+        "require_student": require_student,
         "filters": filters,
         "filter_options": options,
         "current_user": scope.user,

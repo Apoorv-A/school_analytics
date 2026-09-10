@@ -22,6 +22,7 @@ Create a new file when you hit a failure that took non-obvious debugging — CI 
 | 2026-09-10 | [sqlite-connection-pool-exhaustion](2026-09-10-sqlite-connection-pool-exhaustion.md) | Dashboard stalled 20–30s; SQLite pool size 5 exhausted by parallel chart API calls |
 | 2026-09-10 | [preflight-ruff-import-lint](2026-09-10-preflight-ruff-import-lint.md) | CI preflight failed on Ruff I001/F401/S607 across imports and scripts |
 | 2026-09-10 | [local-dev-connection-refused](2026-09-10-local-dev-connection-refused.md) | Browser `ERR_CONNECTION_REFUSED`; uvicorn not running / no seed |
+| 2026-09-10 | [sqlite-wal-disk-io-error](sqlite-wal-disk-io-error.md) | `disk I/O error` on WAL pragma; remove stale `school.db-wal` / `school.db-shm` |
 
 ## Related
 

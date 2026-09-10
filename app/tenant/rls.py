@@ -54,6 +54,7 @@ def apply_rls_policies(connection) -> None:
         "scores",
         "attendance",
         "remarks",
+        "import_runs",
     )
     for table in tenant_tables:
         connection.execute(text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))

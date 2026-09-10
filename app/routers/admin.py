@@ -2,15 +2,30 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Path,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import AccessScope, get_access_scope, require_roles
 from app.models import Role, Student
 from app.portals import render_dashboard, student_subtitle
-from app.routers.student_views import STUDENT_PAGES
+from app.routers.student_views import (
+    STUDENT_PAGES,
+    staff_student_overview_cards,
+)
 from app.schemas import FilterParams, filter_params
+from app.templating import templates
+from app.tenant.features import require_bulk_import_enabled
 
 router = APIRouter(
     prefix="/admin",
@@ -26,6 +41,27 @@ SCHOOL_FILTERS = [
     "subject",
     "assessment_type",
 ]
+
+ADMIN_STUDENT_PAGES = {
+    "overview": {
+        **{key: value for key, value in STUDENT_PAGES["overview"].items() if key != "cards"},
+        "cards": staff_student_overview_cards(admin=True),
+    },
+    "remarks": STUDENT_PAGES["remarks"],
+    "insights": {
+        "title": "Performance insights",
+        "filters": ["academic_year", "student", "term", "subject"],
+        "cards": [
+            {
+                "key": "student.insights",
+                "title": "Insight report",
+                "subtitle": "Evidence-backed summary with suggested actions.",
+                "span": 12,
+                "holder": "state",
+            },
+        ],
+    },
+}
 
 PAGES: dict[str, dict] = {
     "overview": {
@@ -119,6 +155,12 @@ PAGES: dict[str, dict] = {
                 "holder": "state",
             },
             {
+                "key": "school.section_compare",
+                "title": "Class comparison",
+                "subtitle": "Compare averages across selected classes.",
+                "span": 12,
+            },
+            {
                 "key": "school.section_matrix",
                 "title": "Class by subject heatmap",
                 "span": 12,
@@ -134,7 +176,7 @@ PAGES: dict[str, dict] = {
             {
                 "key": "school.at_risk",
                 "title": "Flagged students",
-                "subtitle": "High risk first. Reasons are listed per student.",
+                "subtitle": "High risk first. Click a name to open the insight report.",
                 "span": 12,
                 "holder": "state",
             },
@@ -164,9 +206,17 @@ PAGES: dict[str, dict] = {
     },
     "student": {
         "title": "Student lookup",
-        "subtitle": "Pick any student to open their full record",
+        "subtitle": "Search for a student to open their full record",
         "filters": ["academic_year", "student", "term", "subject", "assessment_type"],
-        "cards": STUDENT_PAGES["overview"]["cards"],
+        "cards": staff_student_overview_cards(admin=True),
+        "require_student": True,
+    },
+    "import": {
+        "title": "Data import",
+        "subtitle": "Upload CSV bundles for validation before applying",
+        "filters": [],
+        "cards": [],
+        "template": "import.html",
     },
 }
 
@@ -177,8 +227,26 @@ def _render(
     db: Session,
     scope: AccessScope,
     filters: FilterParams,
+    *,
+    extra: dict | None = None,
 ) -> Response:
     page = PAGES[page_key]
+    if page_key == "import":
+        require_bulk_import_enabled()
+        from app.import_.history import recent_import_runs
+
+        runs = recent_import_runs(db, scope.tenant_id)
+        return templates.TemplateResponse(
+            request,
+            page.get("template", "import.html"),
+            {
+                "page_title": page["title"],
+                "page_subtitle": page.get("subtitle"),
+                "active_nav": "/admin/import",
+                "current_user": scope.user,
+                "import_runs": runs,
+            },
+        )
     return render_dashboard(
         request,
         db,
@@ -190,6 +258,50 @@ def _render(
         visible_filters=page["filters"],
         cards=page["cards"],
         intro=page.get("intro"),
+        require_student=page.get("require_student", False),
+        extra=extra,
+    )
+
+
+def _render_student_page(
+    request: Request,
+    student: Student,
+    page_key: str,
+    db: Session,
+    scope: AccessScope,
+    filters: FilterParams,
+) -> Response:
+    page = ADMIN_STUDENT_PAGES[page_key]
+    return render_dashboard(
+        request,
+        db,
+        scope,
+        filters.with_student(student.id),
+        title=f"{page['title']} - {student.full_name}",
+        subtitle=student_subtitle(student),
+        active_nav="/admin/student",
+        visible_filters=page["filters"],
+        cards=page["cards"],
+        pinned=["student_id"],
+        extra={
+            "student_nav": [
+                {
+                    "href": f"/admin/student/{student.id}",
+                    "label": "Overview",
+                    "current": page_key == "overview",
+                },
+                {
+                    "href": f"/admin/student/{student.id}/remarks",
+                    "label": "Remarks",
+                    "current": page_key == "remarks",
+                },
+                {
+                    "href": f"/admin/student/{student.id}/insights",
+                    "label": "Insights",
+                    "current": page_key == "insights",
+                },
+            ],
+        },
     )
 
 
@@ -203,8 +315,6 @@ def overview(
     return _render(request, "overview", db, scope, filters)
 
 
-# `target_id`, not `student_id`, because `filter_params` already supplies a
-# `student_id` query parameter and the two cannot share a name.
 @router.get("/student/{target_id}")
 def student_detail(
     request: Request,
@@ -219,20 +329,65 @@ def student_detail(
             status_code=status.HTTP_404_NOT_FOUND, detail="Student not found."
         )
     scope.assert_tenant_record(student.tenant_id, "Student")
-    return render_dashboard(
-        request,
-        db,
-        scope,
-        filters.with_student(student.id),
-        title=f"Student detail - {student.full_name}",
-        subtitle=student_subtitle(student),
-        active_nav="/admin/student",
-        visible_filters=["academic_year", "student", "term", "subject", "assessment_type"],
-        cards=STUDENT_PAGES["overview"]["cards"],
-        # Normally carried by the student select; pinned so the page still works
-        # if that control is not drawn.
-        pinned=["student_id"],
-    )
+    return _render_student_page(request, student, "overview", db, scope, filters)
+
+
+@router.get("/student/{target_id}/insights")
+def student_insights(
+    request: Request,
+    target_id: int = Path(ge=1),
+    db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
+    filters: FilterParams = Depends(filter_params),
+) -> Response:
+    student = db.get(Student, target_id)
+    if student is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Student not found."
+        )
+    scope.assert_tenant_record(student.tenant_id, "Student")
+    return _render_student_page(request, student, "insights", db, scope, filters)
+
+
+@router.get("/student/{target_id}/remarks")
+def student_remarks(
+    request: Request,
+    target_id: int = Path(ge=1),
+    db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
+    filters: FilterParams = Depends(filter_params),
+) -> Response:
+    student = db.get(Student, target_id)
+    if student is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Student not found."
+        )
+    scope.assert_tenant_record(student.tenant_id, "Student")
+    return _render_student_page(request, student, "remarks", db, scope, filters)
+
+
+@router.post("/import/validate")
+async def import_validate(
+    files: list[UploadFile] = File(default=[]),
+    db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
+) -> dict:
+    require_bulk_import_enabled()
+    from app.import_ import validate_uploads
+
+    return validate_uploads(db, scope.tenant_id, files, user_id=scope.user.id)
+
+
+@router.post("/import/apply")
+async def import_apply(
+    files: list[UploadFile] = File(default=[]),
+    db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
+) -> dict:
+    require_bulk_import_enabled()
+    from app.import_ import apply_uploads
+
+    return apply_uploads(db, scope.tenant_id, files, user_id=scope.user.id)
 
 
 @router.get("/{page_key}")

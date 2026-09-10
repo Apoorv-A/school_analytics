@@ -510,6 +510,9 @@ select:focus {
 /* ------------------------------------------------------------ Filter bar */
 
 .filters {
+  position: relative;
+  z-index: 20;
+  overflow: visible;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -522,6 +525,7 @@ select:focus {
   flex-wrap: wrap;
   gap: 13px;
   align-items: flex-end;
+  overflow: visible;
 }
 
 .filter {
@@ -565,6 +569,147 @@ select:focus {
   padding: 2px 9px;
   font-size: 11.5px;
   font-weight: 550;
+}
+
+.chip--active {
+  background: var(--indigo-600);
+  color: #fff;
+  border-color: var(--indigo-600);
+}
+
+.chip button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.combobox {
+  position: relative;
+}
+
+.filter[data-student-combobox].is-open {
+  z-index: 30;
+}
+
+.combobox__results {
+  position: absolute;
+  z-index: 40;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  max-height: 240px;
+  overflow: auto;
+}
+
+.combobox__results button,
+.combobox__item,
+.combobox__empty {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.combobox__results button:hover,
+.combobox__item:hover {
+  background: var(--indigo-50);
+}
+
+.multi-select__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.multi-select__menu {
+  margin-top: 8px;
+  position: relative;
+}
+
+.multi-select__menu > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--indigo-600);
+  list-style: none;
+}
+
+.multi-select__menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.multi-select__panel {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  top: calc(100% + 4px);
+  min-width: 220px;
+  max-height: 220px;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: 6px 0;
+}
+
+.multi-select__panel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.multi-select__panel-row:hover {
+  background: var(--slate-50);
+}
+
+.multi-select__panel-row input {
+  margin: 0;
+}
+
+.insights-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.insights-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+}
+
+.insights-card h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.insights-card ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.data tr.row-highlight td {
+  background: var(--indigo-50);
 }
 
 /* ------------------------------------------------------------ KPI cards */
@@ -1028,6 +1173,94 @@ table.heat td {
 }
 
 /* -------------------------------------------------------------- Print */
+
+.multi-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 320px;
+}
+
+.multi-select__option {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.multi-select__option.is-selected {
+  background: var(--indigo-50);
+  border-color: var(--indigo-200);
+  color: var(--indigo-700);
+}
+
+.table-link {
+  color: var(--indigo-600);
+  text-decoration: none;
+  font-weight: 550;
+}
+
+.table-link:hover {
+  text-decoration: underline;
+}
+
+tr.row--highlight td {
+  background: var(--indigo-50);
+}
+
+.insights__header {
+  margin-bottom: 16px;
+}
+
+.insights__headline {
+  margin: 8px 0;
+  font-size: 20px;
+}
+
+.insights__reasons {
+  margin: 8px 0 0 18px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.insights__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.insights__card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  background: var(--surface);
+}
+
+.insights__card--wide {
+  grid-column: 1 / -1;
+}
+
+.insights__subject {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.insights__remark {
+  margin: 8px 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--indigo-200);
+}
+
+.insights__actions {
+  margin: 0;
+  padding-left: 18px;
+}
 
 @media print {
   :root { --bg: #fff; }

@@ -266,6 +266,8 @@ class User(Base):
     )
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    external_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    source_system: Mapped[str | None] = mapped_column(String(40))
     full_name: Mapped[str] = mapped_column(String(160), nullable=False)
     role: Mapped[Role] = mapped_column(Enum(Role, native_enum=False), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(32))
@@ -332,6 +334,8 @@ class Student(Base):
         ForeignKey("sections.id", ondelete="CASCADE"), index=True
     )
     admission_no: Mapped[str] = mapped_column(String(32), nullable=False)
+    external_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    source_system: Mapped[str | None] = mapped_column(String(40))
     roll_no: Mapped[int] = mapped_column(Integer, nullable=False)
     full_name: Mapped[str] = mapped_column(String(160), nullable=False)
     date_of_birth: Mapped[date | None] = mapped_column(Date)
@@ -407,6 +411,8 @@ class Assessment(Base):
     max_marks: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)
     weightage: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     conducted_on: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    external_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    source_system: Mapped[str | None] = mapped_column(String(40))
     created_by_teacher_id: Mapped[int | None] = mapped_column(
         ForeignKey("teachers.id", ondelete="SET NULL")
     )
@@ -441,6 +447,8 @@ class Score(Base):
     )
     marks_obtained: Mapped[float | None] = mapped_column(Float)
     is_absent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    external_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    source_system: Mapped[str | None] = mapped_column(String(40))
     note: Mapped[str | None] = mapped_column(String(255))
 
     assessment: Mapped[Assessment] = relationship(back_populates="scores")
@@ -475,6 +483,8 @@ class Attendance(Base):
     status: Mapped[AttendanceStatus] = mapped_column(
         Enum(AttendanceStatus, native_enum=False), nullable=False
     )
+    external_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    source_system: Mapped[str | None] = mapped_column(String(40))
 
     student: Mapped[Student] = relationship()
 
@@ -502,9 +512,41 @@ class Remark(Base):
         Enum(RemarkCategory, native_enum=False), nullable=False
     )
     body: Mapped[str] = mapped_column(Text, nullable=False)
+    external_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    source_system: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     student: Mapped[Student] = relationship()
     teacher: Mapped[Teacher | None] = relationship()
     term: Mapped[Term | None] = relationship()
     subject: Mapped[Subject | None] = relationship()
+
+
+class ImportRunStatus(enum.StrEnum):
+    VALIDATED = "validated"
+    APPLIED = "applied"
+    FAILED = "failed"
+
+
+class ImportRun(Base):
+    """Audit trail for CSV ingest (Phase 2 foundation for ERP sync)."""
+
+    __tablename__ = "import_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[ImportRunStatus] = mapped_column(
+        Enum(ImportRunStatus, native_enum=False), nullable=False
+    )
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    file_summary: Mapped[str | None] = mapped_column(String(255))
+    row_counts: Mapped[dict | None] = mapped_column(JSON)
+    error_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )

@@ -8,6 +8,16 @@
   {% for name, value in (pinned_filters or {}).items() %}
     <input type="hidden" data-filter="{{ name }}" data-filter-pinned value="{{ value }}">
   {% endfor %}
+  {% if filters.subject_ids and filters.subject_ids|length > 1 %}
+    {% for id in filters.subject_ids %}
+      <input type="hidden" data-filter-pinned data-passthrough="subject_ids" value="{{ id }}">
+    {% endfor %}
+  {% endif %}
+  {% if filters.section_ids and filters.section_ids|length > 1 %}
+    {% for id in filters.section_ids %}
+      <input type="hidden" data-filter-pinned data-passthrough="section_ids" value="{{ id }}">
+    {% endfor %}
+  {% endif %}
   <div class="filters__row">
     {% if "academic_year" in rendered_filters %}
       <div class="filter">
@@ -21,17 +31,34 @@
     {% endif %}
 
     {% if "student" in rendered_filters %}
-      <div class="filter filter--wide">
-        <label for="f-student">Student</label>
-        <select id="f-student" data-filter="student_id">
-          {% if current_user.role.value in ("admin", "teacher") %}
-            <option value="">Select a student</option>
-          {% endif %}
+      {% if current_user.role.value == "admin" %}
+        {% set selected_student = namespace(label="") %}
+        {% if filters.student_id %}
           {% for option in filter_options.students %}
-            <option value="{{ option.id }}" {% if filters.student_id == option.id %}selected{% endif %}>{{ option.label }}</option>
+            {% if option.id == filters.student_id %}
+              {% set selected_student.label = option.label %}
+            {% endif %}
           {% endfor %}
-        </select>
-      </div>
+        {% endif %}
+        <div class="filter filter--wide combobox" data-student-combobox>
+          <label for="f-student-search">Student</label>
+          <input id="f-student-search" type="search" autocomplete="off" placeholder="Search or pick a student" value="{{ selected_student.label }}">
+          <input type="hidden" data-filter="student_id" id="f-student-id" value="{{ filters.student_id or '' }}">
+          <ul class="combobox__results" data-student-results hidden></ul>
+        </div>
+      {% else %}
+        <div class="filter filter--wide">
+          <label for="f-student">Student</label>
+          <select id="f-student" data-filter="student_id">
+            {% if current_user.role.value == "teacher" %}
+              <option value="">Select a student</option>
+            {% endif %}
+            {% for option in filter_options.students %}
+              <option value="{{ option.id }}" {% if filters.student_id == option.id %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      {% endif %}
     {% endif %}
 
     {% if "term" in rendered_filters %}

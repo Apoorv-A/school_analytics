@@ -1,0 +1,7 @@
+{% if student_nav %}
+  <nav class="filters__summary" aria-label="Student sections" style="margin-bottom: 12px;">
+    {% for item in student_nav %}
+      <a class="chip{% if item.current %} chip--active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
+    {% endfor %}
+  </nav>
+{% endif %}

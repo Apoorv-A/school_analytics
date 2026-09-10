@@ -60,7 +60,7 @@
       </div>
     </header>
 
-    <div class="content">
+    <div class="content"{% if require_student | default(false) %} data-require-student{% endif %}>
       {% block before_filters %}{% endblock %}
 
       {# Also rendered when only pinned values exist: the chart API reads this form,

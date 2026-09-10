@@ -553,13 +553,21 @@
       }
       rows.forEach(function (row) {
         const tr = el("tr");
+        if (row._highlight) tr.classList.add("row--highlight");
         payload.columns.forEach(function (column) {
           const value = row[column.key];
           const td = el("td", null, fmtCell(value, column.key));
           if (column.align === "right") td.classList.add("num");
           if (column.align === "center") td.classList.add("center");
           if (column.key === "reasons" || column.key === "why") td.classList.add("wrap");
-          if (column.key === "status" && row._tone) {
+          if (column.key === "name" && row._student_id && window.location.pathname.startsWith("/admin")) {
+            clear(td);
+            const link = document.createElement("a");
+            link.href = "/admin/student/" + row._student_id + "/insights";
+            link.textContent = String(value);
+            link.className = "table-link";
+            td.appendChild(link);
+          } else if (column.key === "status" && row._tone) {
             clear(td);
             td.appendChild(el("span", "pill pill--" + row._tone, String(value)));
             td.classList.add("center");
@@ -639,6 +647,108 @@
     return null;
   }
 
+  function buildInsightSummary(holder, payload) {
+    holder.style.height = "auto";
+    const header = el("div", "insights__header");
+    header.appendChild(el("span", "pill pill--" + (payload.tone || "neutral"), "Summary"));
+    header.appendChild(el("h3", "insights__headline", payload.headline || payload.student_name));
+    holder.appendChild(header);
+
+    const grid = el("div", "insights__grid");
+    const subjects = el("div", "insights__card");
+    subjects.appendChild(el("h4", null, "Subjects"));
+    (payload.subjects || []).forEach(function (subject) {
+      const row = el("div", "insights__subject");
+      row.appendChild(el("strong", null, subject.subject));
+      const detail = subject.average != null ? subject.average.toFixed(1) + "%" : "--";
+      row.appendChild(el("span", null, detail));
+      row.appendChild(el("span", "muted", subject.trend || ""));
+      subjects.appendChild(row);
+    });
+    grid.appendChild(subjects);
+
+    const attendance = el("div", "insights__card");
+    attendance.appendChild(el("h4", null, "Attendance"));
+    const att = payload.attendance || {};
+    attendance.appendChild(el("p", null, att.percentage != null ? att.percentage.toFixed(1) + "% this term" : "Not recorded"));
+    grid.appendChild(attendance);
+
+    const suggestions = el("div", "insights__card insights__card--wide");
+    suggestions.appendChild(el("h4", null, "Suggestions"));
+    const list = el("ul", "insights__reasons");
+    (payload.suggestions || []).forEach(function (item) {
+      list.appendChild(el("li", null, item));
+    });
+    suggestions.appendChild(list);
+    grid.appendChild(suggestions);
+
+    holder.appendChild(grid);
+    return null;
+  }
+
+  function buildInsights(holder, payload) {
+    holder.style.height = "auto";
+    const risk = payload.risk || {};
+    const header = el("div", "insights__header");
+    header.appendChild(el("span", "pill pill--" + (risk.tone || "neutral"), risk.label || "Insights"));
+    header.appendChild(el("h3", "insights__headline", risk.headline || payload.student_name));
+    if (risk.reasons && risk.reasons.length) {
+      const reasons = el("ul", "insights__reasons");
+      risk.reasons.forEach(function (reason) {
+        const item = el("li", null, reason);
+        reasons.appendChild(item);
+      });
+      header.appendChild(reasons);
+    }
+    holder.appendChild(header);
+
+    const grid = el("div", "insights__grid");
+    const subjects = el("div", "insights__card");
+    subjects.appendChild(el("h4", null, "Subject breakdown"));
+    (payload.subjects || []).forEach(function (subject) {
+      const row = el("div", "insights__subject");
+      row.appendChild(el("strong", null, subject.subject));
+      const detail = subject.average != null ? subject.average.toFixed(1) + "%" : "--";
+      row.appendChild(el("span", null, detail + " (class " + (subject.class_average != null ? subject.class_average.toFixed(1) : "--") + "%)"));
+      row.appendChild(el("span", "muted", subject.trend));
+      subjects.appendChild(row);
+    });
+    grid.appendChild(subjects);
+
+    const attendance = el("div", "insights__card");
+    attendance.appendChild(el("h4", null, "Attendance"));
+    const att = payload.attendance || {};
+    attendance.appendChild(el("p", null, att.percentage != null ? att.percentage.toFixed(1) + "% this term" : "Not recorded"));
+    if (att.note) attendance.appendChild(el("p", "muted", att.note));
+    grid.appendChild(attendance);
+
+    const remarks = el("div", "insights__card");
+    remarks.appendChild(el("h4", null, "Recent remarks"));
+    if (!(payload.remarks || []).length) {
+      remarks.appendChild(el("p", "muted", "No recent academic or concern remarks."));
+    } else {
+      (payload.remarks || []).forEach(function (item) {
+        const entry = el("blockquote", "insights__remark");
+        entry.appendChild(el("div", "muted", item.teacher + " · " + item.category));
+        entry.appendChild(el("p", null, item.body));
+        remarks.appendChild(entry);
+      });
+    }
+    grid.appendChild(remarks);
+
+    const actions = el("div", "insights__card insights__card--wide");
+    actions.appendChild(el("h4", null, "Suggested actions"));
+    const list = el("ol", "insights__actions");
+    (payload.actions || []).forEach(function (action) {
+      list.appendChild(el("li", null, action));
+    });
+    actions.appendChild(list);
+    grid.appendChild(actions);
+
+    holder.appendChild(grid);
+    return null;
+  }
+
   function buildTimeline(holder, payload) {
     holder.style.height = "auto";
     if (!payload.items || !payload.items.length) {
@@ -675,6 +785,8 @@
     table: buildTable,
     kpi: buildKpis,
     timeline: buildTimeline,
+    insights: buildInsights,
+    insight_summary: buildInsightSummary,
   };
 
   /* --------------------------------------------------------------- CSV */
@@ -713,6 +825,12 @@
         lines.push(
           [row.label].concat(payload.values[index] || []).map(escape).join(",")
         );
+      });
+    } else if (payload.kind === "insights") {
+      lines.push("Section,Detail");
+      lines.push(["Risk", (payload.risk && payload.risk.label) || ""].map(escape).join(","));
+      (payload.actions || []).forEach(function (action, index) {
+        lines.push(["Action " + (index + 1), action].map(escape).join(","));
       });
     } else if (payload.kind === "timeline") {
       lines.push("Category,Term,Teacher,Subject,Remark");
@@ -764,6 +882,17 @@
     return window.SchoolFilters ? window.SchoolFilters.queryString() : "";
   }
 
+  function studentSelected() {
+    const params = new URLSearchParams(currentQuery());
+    const value = (params.get("student_id") || "").trim();
+    return value !== "";
+  }
+
+  function pageRequiresStudent() {
+    const content = document.querySelector(".content[data-require-student]");
+    return content !== null;
+  }
+
   async function loadCard(card) {
     const key = card.getAttribute("data-chart");
     const holder = card.querySelector("[data-chart-body]");
@@ -774,6 +903,20 @@
       entry.chart.destroy();
       entry.chart = null;
     }
+
+    const subtitle = card.querySelector("[data-chart-subtitle]");
+
+    if (pageRequiresStudent() && !studentSelected()) {
+      clear(holder);
+      showState(
+        holder,
+        "Select a student from the filter bar to view their record."
+      );
+      if (subtitle) subtitle.textContent = "";
+      registry.set(card, { payload: null, chart: null });
+      return;
+    }
+
     showLoading(holder);
 
     const query = currentQuery();
@@ -810,6 +953,7 @@
       const isEmpty =
         (payload.kind === "table" && !payload.rows.length) ||
         (payload.kind === "timeline" && !(payload.items || []).length) ||
+        (payload.kind === "insights" && !payload.risk) ||
         (payload.series && !hasAnyValue(payload.series) && payload.kind !== "kpi");
       if (isEmpty && payload.kind !== "kpi") {
         showState(holder, "No results match the current filters.");
@@ -820,7 +964,6 @@
       const chart = builder(holder, payload);
       registry.set(card, { payload: payload, chart: chart });
 
-      const subtitle = card.querySelector("[data-chart-subtitle]");
       if (subtitle && payload.meta && payload.meta.hint) {
         subtitle.textContent = payload.meta.hint;
       }

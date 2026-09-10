@@ -10,11 +10,16 @@ Canonical documentation for the Python multi-tenant school analytics platform.
 | --- | --- |
 | [AI_HANDOFF.md](AI_HANDOFF.md) | **Start here** — full context for other AIs and engineers |
 | [product/overview.md](product/overview.md) | Vision, personas, portals, and product scope |
+| [product/erp-strategy.md](product/erp-strategy.md) | ERP coexistence and ingest roadmap |
+| [onboarding/school-intake-checklist.md](onboarding/school-intake-checklist.md) | New school onboarding steps |
+| [onboarding/csv-templates/](onboarding/csv-templates/) | CSV column headers for ingest |
 | [architecture/multi-tenancy.md](architecture/multi-tenancy.md) | Hostname binding, RLS, authorization layers |
 | [data/column-dictionary.md](data/column-dictionary.md) | Generated table and column reference |
 | [analytics/chart-catalog.yaml](analytics/chart-catalog.yaml) | Machine-readable chart registry |
 | [analytics/chart-catalog.md](analytics/chart-catalog.md) | Generated human-readable chart catalog |
 | [operations/tenant-onboarding.md](operations/tenant-onboarding.md) | Onboard a school via config only |
+| [onboarding/school-intake-checklist.md](onboarding/school-intake-checklist.md) | CSV templates, validate/apply, bootstrap admin |
+| [product/erp-strategy.md](product/erp-strategy.md) | ERP coexistence and ingest roadmap |
 | [learnings/](learnings/README.md) | **Failure log** — symptoms, cause, fix (add one file per incident) |
 | [security/threat-model.md](security/threat-model.md) | Isolation, secrets, and child-data policy |
 | [adr/](adr/) | Architecture decision records |

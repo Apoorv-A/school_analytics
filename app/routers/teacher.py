@@ -10,7 +10,7 @@ from app.db import get_db
 from app.deps import AccessScope, get_access_scope, require_roles
 from app.models import Role, Student
 from app.portals import render_dashboard, student_subtitle
-from app.routers.student_views import STUDENT_PAGES
+from app.routers.student_views import staff_student_overview_cards
 from app.schemas import FilterParams, filter_params
 
 router = APIRouter(
@@ -216,7 +216,6 @@ def student_detail(
             status_code=status.HTTP_404_NOT_FOUND, detail="Student not found."
         )
     scope.assert_tenant_record(student.tenant_id, "Student")
-    page = STUDENT_PAGES["overview"]
     return render_dashboard(
         request,
         db,
@@ -226,7 +225,7 @@ def student_detail(
         subtitle=student_subtitle(student),
         active_nav="/teacher/students",
         visible_filters=["academic_year", "term", "subject", "assessment_type"],
-        cards=page["cards"],
+        cards=staff_student_overview_cards(admin=False),
         # This page is about the student in the URL, and deliberately offers no
         # student control, so the charts have to be told which one.
         pinned=["student_id"],

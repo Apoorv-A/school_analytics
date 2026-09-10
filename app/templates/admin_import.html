@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="card" style="padding: 20px; max-width: 640px;">
+    <p class="muted">Upload a ZIP containing the CSV templates from <code>docs/onboarding/csv-templates/</code>, or individual CSV files. Validation runs before any data is written.</p>
+    <form id="import-form" enctype="multipart/form-data">
+      <div class="filter" style="margin: 16px 0;">
+        <label for="import-file">CSV bundle</label>
+        <input id="import-file" name="file" type="file" accept=".zip,.csv" required>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button type="button" class="btn" data-action="validate-import">Validate</button>
+        <button type="button" class="btn btn--primary" data-action="apply-import">Apply import</button>
+      </div>
+    </form>
+    <pre id="import-report" class="muted" style="margin-top: 16px; white-space: pre-wrap;"></pre>
+  </div>
+  <script>
+    (function () {
+      const fileInput = document.getElementById("import-file");
+      const report = document.getElementById("import-report");
+
+      function run(endpoint) {
+        const file = fileInput.files[0];
+        if (!file) {
+          report.textContent = "Choose a file first.";
+          return;
+        }
+        const body = new FormData();
+        body.append("file", file);
+        report.textContent = "Working…";
+        fetch(endpoint, { method: "POST", body: body, credentials: "same-origin" })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            report.textContent = JSON.stringify(data, null, 2);
+          })
+          .catch(function () {
+            report.textContent = "Request failed.";
+          });
+      }
+
+      document.querySelector("[data-action='validate-import']")
+        .addEventListener("click", function () { run("/api/import/validate"); });
+      document.querySelector("[data-action='apply-import']")
+        .addEventListener("click", function () {
+          if (window.confirm("Apply this import to the live tenant database?")) {
+            run("/api/import/apply");
+          }
+        });
+    })();
+  </script>
+{% endblock %}

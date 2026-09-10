@@ -28,6 +28,8 @@ Generated from SQLAlchemy models. Do not edit by hand.
 | `max_marks` | FLOAT | no | — |
 | `weightage` | FLOAT | no | — |
 | `conducted_on` | DATE | no | — |
+| `external_id` | VARCHAR(64) | yes | — |
+| `source_system` | VARCHAR(40) | yes | — |
 | `created_by_teacher_id` | INTEGER | yes | FK → teachers.id |
 
 ## `attendance`
@@ -40,6 +42,8 @@ Generated from SQLAlchemy models. Do not edit by hand.
 | `term_id` | INTEGER | yes | FK → terms.id |
 | `on_date` | DATE | no | — |
 | `status` | VARCHAR(7) | no | — |
+| `external_id` | VARCHAR(64) | yes | — |
+| `source_system` | VARCHAR(40) | yes | — |
 
 ## `grades`
 
@@ -85,6 +89,8 @@ Generated from SQLAlchemy models. Do not edit by hand.
 | `student_id` | INTEGER | no | FK → students.id |
 | `marks_obtained` | FLOAT | yes | — |
 | `is_absent` | BOOLEAN | no | — |
+| `external_id` | VARCHAR(64) | yes | — |
+| `source_system` | VARCHAR(40) | yes | — |
 | `note` | VARCHAR(255) | yes | — |
 
 ## `sections`
@@ -109,6 +115,8 @@ Generated from SQLAlchemy models. Do not edit by hand.
 | `guardian_user_id` | INTEGER | yes | FK → users.id |
 | `section_id` | INTEGER | no | FK → sections.id |
 | `admission_no` | VARCHAR(32) | no | — |
+| `external_id` | VARCHAR(64) | yes | — |
+| `source_system` | VARCHAR(40) | yes | — |
 | `roll_no` | INTEGER | no | — |
 | `full_name` | VARCHAR(160) | no | — |
 | `date_of_birth` | DATE | yes | — |
@@ -188,6 +196,8 @@ Generated from SQLAlchemy models. Do not edit by hand.
 | `tenant_id` | CHAR(32) | no | FK → tenants.id |
 | `email` | VARCHAR(255) | no | — |
 | `password_hash` | VARCHAR(255) | no | — |
+| `external_id` | VARCHAR(64) | yes | — |
+| `source_system` | VARCHAR(40) | yes | — |
 | `full_name` | VARCHAR(160) | no | — |
 | `role` | VARCHAR(7) | no | — |
 | `phone` | VARCHAR(32) | yes | — |

@@ -14,6 +14,7 @@ Generated from `app/analytics/charts.py`. Do not edit by hand.
 | `student.subject_table` | Subject breakdown | table | admin, parent, student, teacher |
 | `student.assessment_table` | Every assessment | table | admin, parent, student, teacher |
 | `student.remarks` | Teacher remarks | timeline | admin, parent, student, teacher |
+| `student.insights` | Performance insights | insights | admin |
 | `section.kpis` | Classroom summary | kpi | admin, teacher |
 | `section.distribution` | Score distribution | chart | admin, teacher |
 | `section.assessment_averages` | Average by assessment | chart | admin, teacher |
@@ -33,6 +34,7 @@ Generated from `app/analytics/charts.py`. Do not edit by hand.
 | `school.pass_rate` | Pass rate | chart | admin |
 | `school.distribution` | School score distribution | chart | admin |
 | `school.section_leaderboard` | Class leaderboard | table | admin |
+| `school.section_compare` | Class comparison | chart | admin |
 | `school.at_risk` | School-wide at-risk cohort | table | admin |
 | `school.attendance_scatter` | Attendance versus performance | chart | admin |
 | `school.teacher_effectiveness` | Results by teacher | table | admin |

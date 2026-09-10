@@ -305,6 +305,61 @@ class TestTeacherScope:
 
 
 class TestAdminScope:
+    def test_admin_can_search_students(self, admin_client):
+        response = admin_client.get("/api/students/search", params={"q": "aa"})
+        assert response.status_code == 200
+        assert "results" in response.json()
+
+    def test_teacher_cannot_search_whole_school(self, teacher_context):
+        response = teacher_context["client"].get(
+            "/api/students/search", params={"q": "aa"}
+        )
+        assert response.status_code == 403
+
+    def test_single_char_search_filters(self, admin_client, db):
+        from sqlalchemy import select
+
+        from app.models import Student
+
+        student = db.scalars(select(Student).limit(1)).one()
+        prefix = student.full_name[0].lower()
+        payload = admin_client.get("/api/students/search", params={"q": prefix}).json()
+        ids = {row["id"] for row in payload["results"]}
+        assert student.id in ids
+
+    def test_search_escapes_like_wildcards(self, admin_client, db):
+        from sqlalchemy import select
+
+        from app.db import SessionLocal
+        from app.models import Student
+
+        with SessionLocal() as session:
+            literal = session.scalars(
+                select(Student).order_by(Student.id).limit(1)
+            ).one()
+            decoy = session.scalars(
+                select(Student).where(Student.id != literal.id).order_by(Student.id).limit(1)
+            ).one()
+            literal_name = "LikeTest_Exact"
+            decoy_name = "LikeTestXExact"
+            original = (literal.full_name, decoy.full_name)
+            literal.full_name = literal_name
+            decoy.full_name = decoy_name
+            session.commit()
+        try:
+            payload = admin_client.get(
+                "/api/students/search", params={"q": "LikeTest_Exact"}
+            ).json()
+            ids = {row["id"] for row in payload["results"]}
+            assert literal.id in ids
+            assert decoy.id not in ids
+        finally:
+            with SessionLocal() as session:
+                literal_row = session.get(Student, literal.id)
+                decoy_row = session.get(Student, decoy.id)
+                literal_row.full_name, decoy_row.full_name = original
+                session.commit()
+
     def test_admin_reads_the_whole_school(self, admin_client):
         response = admin_client.get("/api/charts/school.kpis")
         assert response.status_code == 200

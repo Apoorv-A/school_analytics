@@ -175,8 +175,40 @@ def student_subject_trend(
     student = _target_student(db, filters, scope)
     student_filters = filters.with_student(student.id)
 
-    if filters.subject_id is not None:
-        payload = queries.student_assessment_series(db, student, student_filters, scope)
+    subject_ids = filters.resolved_subject_ids() or []
+    if len(subject_ids) > 1:
+        matrix = queries.matrix_averages(
+            db,
+            student_filters,
+            scope,
+            row_dimension="term",
+            column_dimension="subject",
+        )
+        labels = [row["label"] for row in matrix["rows"]]
+        series = []
+        for col in matrix["columns"]:
+            if col["id"] in subject_ids:
+                idx = matrix["columns"].index(col)
+                series.append(
+                    {
+                        "label": col["label"],
+                        "data": [matrix["values"][r][idx] for r in range(len(matrix["rows"]))],
+                    }
+                )
+        return {
+            "kind": "line",
+            "labels": labels,
+            "series": series,
+            "meta": {"axis": "Term", "hint": "One line per selected subject."},
+        }
+
+    if filters.subject_id is not None or len(subject_ids) == 1:
+        single_filters = student_filters
+        if len(subject_ids) == 1:
+            single_filters = student_filters.model_copy(
+                update={"subject_id": subject_ids[0], "subject_ids": None}
+            )
+        payload = queries.student_assessment_series(db, student, single_filters, scope)
         facts = payload["assessments"]
         class_averages = payload["class_averages"]
         labels = [
@@ -419,13 +451,43 @@ def student_remarks(db: Session, filters: FilterParams, scope: AccessScope) -> d
 # --------------------------------------------------------------------------- #
 
 
+def _pick_classroom_section(section_ids: list[int], scope: AccessScope) -> int:
+    """Pick one section when bookmarks/API pass multiple ``section_ids``.
+
+    Classroom charts render a single class. When several ids are selected, a
+    teacher sees their own assigned section if it is in the list; otherwise the
+    first requested id the caller may access. Administrators take the first id.
+    """
+    if scope.section_ids is not None:
+        allowed = set(section_ids)
+        for assigned in sorted(scope.section_ids):
+            if assigned in allowed:
+                return assigned
+    return section_ids[0]
+
+
 def _section_filters(
     db: Session, filters: FilterParams, scope: AccessScope
 ) -> FilterParams:
-    """Classroom charts always target exactly one section."""
+    """Classroom charts always target exactly one section.
+
+    Resolution order: explicit ``section_id``; a lone ``section_ids`` entry;
+    when several ``section_ids`` are set, ``_pick_classroom_section``; else the
+    tenant default (teacher home class or lowest grade/section for admins).
+    """
     if filters.section_id is not None:
         scope.assert_section(filters.section_id)
-        return filters
+        return filters.with_section(filters.section_id)
+
+    section_ids = filters.resolved_section_ids()
+    if section_ids is not None:
+        if len(section_ids) == 1:
+            section_id = section_ids[0]
+        else:
+            section_id = _pick_classroom_section(section_ids, scope)
+        scope.assert_section(section_id)
+        return filters.with_section(section_id)
+
     section_id = queries.default_section_id(db, filters, scope)
     if section_id is None:
         raise HTTPException(
@@ -769,10 +831,38 @@ def school_distribution(db: Session, filters: FilterParams, scope: AccessScope) 
     }
 
 
+def _section_comparison_context(
+    filters: FilterParams,
+) -> tuple[FilterParams, set[int]]:
+    """Split section picks into query filters vs row highlights.
+
+    The filter bar emits a single ``section_id``; that should focus a class on
+    comparison charts without collapsing them to one row. Explicit ``section_ids``
+    (repeated query params) narrows the comparison when two or more are given;
+    a lone ``section_ids`` value falls back to all in-scope sections with a
+    highlight on that class.
+    """
+    if filters.section_ids:
+        if len(filters.section_ids) >= 2:
+            return filters, set(filters.section_ids)
+        section_id = filters.section_ids[0]
+        return (
+            filters.model_copy(update={"section_id": None, "section_ids": None}),
+            {section_id},
+        )
+    if filters.section_id is not None:
+        return (
+            filters.model_copy(update={"section_id": None}),
+            {filters.section_id},
+        )
+    return filters, set()
+
+
 def school_section_leaderboard(
     db: Session, filters: FilterParams, scope: AccessScope
 ) -> dict:
-    rows = queries.grouped_averages(db, filters, scope, "section")
+    query_filters, highlighted = _section_comparison_context(filters)
+    rows = queries.grouped_averages(db, query_filters, scope, "section")
     return {
         "kind": "table",
         "columns": [
@@ -794,11 +884,58 @@ def school_section_leaderboard(
                 "lowest": row["lowest"],
                 "students": row["students"],
                 "_tone": metrics.performance_tone(row["average"]),
+                "_highlight": row["id"] in highlighted if highlighted else False,
             }
             for index, row in enumerate(rows, start=1)
         ],
-        "meta": {"count": len(rows)},
+        "meta": {"count": len(rows), "highlighted": sorted(highlighted)},
     }
+
+
+def school_section_compare(
+    db: Session, filters: FilterParams, scope: AccessScope
+) -> dict:
+    """Grouped bar comparing class averages (optionally filtered by subject)."""
+    query_filters, highlighted = _section_comparison_context(filters)
+    rows = queries.grouped_averages(db, query_filters, scope, "section")
+    meta: dict[str, object] = {"detail": rows, "unit": "%", "highlighted": sorted(highlighted)}
+    if len(rows) < 2:
+        meta["hint"] = (
+            "Only one class matches these filters. Clear the class filter or "
+            "pick a broader grade to compare classes."
+        )
+    return {
+        "kind": "bar",
+        "labels": [row["label"] for row in rows],
+        "series": [
+            {"label": "Class average", "data": [row["average"] for row in rows]},
+            {"label": "Pass rate", "data": [row["pass_rate"] for row in rows]},
+        ],
+        "meta": meta,
+    }
+
+
+def student_insights(
+    db: Session, filters: FilterParams, scope: AccessScope
+) -> dict:
+    student = _target_student(db, filters, scope)
+    data = queries.build_student_insights(
+        db, student, filters.with_student(student.id), scope
+    )
+    return {"kind": "insights", **data}
+
+
+PARENT_STUDENT = frozenset({Role.PARENT, Role.STUDENT})
+
+
+def student_insight_summary(
+    db: Session, filters: FilterParams, scope: AccessScope
+) -> dict:
+    student = _target_student(db, filters, scope)
+    data = queries.build_parent_insight_summary(
+        db, student, filters.with_student(student.id), scope
+    )
+    return {"kind": "insight_summary", **data}
 
 
 def school_at_risk(db: Session, filters: FilterParams, scope: AccessScope) -> dict:
@@ -869,6 +1006,14 @@ CHART_DEFS: tuple[ChartDef, ...] = (
         student_assessment_table, "table",
     ),
     ChartDef("student.remarks", "Teacher remarks", ALL_ROLES, student_remarks, "timeline"),
+    ChartDef(
+        "student.insights", "Performance insights", ADMIN_ONLY,
+        student_insights, "insights",
+    ),
+    ChartDef(
+        "student.insight_summary", "Progress summary", PARENT_STUDENT,
+        student_insight_summary, "insight_summary",
+    ),
     # Classroom level
     ChartDef("section.kpis", "Classroom summary", STAFF, section_kpis, "kpi"),
     ChartDef("section.distribution", "Score distribution", STAFF, section_distribution),
@@ -904,6 +1049,10 @@ CHART_DEFS: tuple[ChartDef, ...] = (
     ChartDef(
         "school.section_leaderboard", "Class leaderboard", ADMIN_ONLY,
         school_section_leaderboard, "table",
+    ),
+    ChartDef(
+        "school.section_compare", "Class comparison", ADMIN_ONLY,
+        school_section_compare,
     ),
     ChartDef(
         "school.at_risk", "School-wide at-risk cohort", ADMIN_ONLY,

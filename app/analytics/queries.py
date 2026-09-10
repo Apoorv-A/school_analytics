@@ -18,7 +18,7 @@ import uuid
 from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import Select, and_, case, func, or_, select
 from sqlalchemy.orm import Session
@@ -34,6 +34,7 @@ from app.models import (
     AttendanceStatus,
     Grade,
     Remark,
+    RemarkCategory,
     Score,
     Section,
     Student,
@@ -135,11 +136,20 @@ class StudentStanding:
     attendance: float | None
     failing_subjects: int
     subjects_assessed: int
+    recent_assessment_drop: float | None = None
+    concern_remark_count: int = 0
+    concern_remark_period: str = "in the last 30 days"
 
     @property
     def risk(self) -> metrics.RiskAssessment:
         return metrics.assess_risk(
-            self.average, self.term_slope, self.attendance, self.failing_subjects
+            self.average,
+            self.term_slope,
+            self.attendance,
+            self.failing_subjects,
+            recent_assessment_drop=self.recent_assessment_drop,
+            concern_remark_count=self.concern_remark_count,
+            concern_remark_period=self.concern_remark_period,
         )
 
     @property
@@ -196,12 +206,14 @@ def _filter_conditions(filters: FilterParams) -> list[ColumnElement[bool]]:
         conditions.append(Term.academic_year_id == filters.academic_year_id)
     if filters.term_id is not None:
         conditions.append(Assessment.term_id == filters.term_id)
-    if filters.subject_id is not None:
-        conditions.append(Assessment.subject_id == filters.subject_id)
+    subject_ids = filters.resolved_subject_ids() or []
+    if subject_ids:
+        conditions.append(Assessment.subject_id.in_(subject_ids))
+    section_ids = filters.resolved_section_ids() or []
+    if section_ids:
+        conditions.append(Assessment.section_id.in_(section_ids))
     if filters.grade_id is not None:
         conditions.append(Section.grade_id == filters.grade_id)
-    if filters.section_id is not None:
-        conditions.append(Assessment.section_id == filters.section_id)
     if filters.student_id is not None:
         conditions.append(Score.student_id == filters.student_id)
     if filters.assessment_type is not None:
@@ -360,8 +372,9 @@ def attendance_by_student(
         )
     if filters.grade_id is not None:
         stmt = stmt.where(Section.grade_id == filters.grade_id)
-    if filters.section_id is not None:
-        stmt = stmt.where(Student.section_id == filters.section_id)
+    section_ids = filters.resolved_section_ids() or []
+    if section_ids:
+        stmt = stmt.where(Student.section_id.in_(section_ids))
     if filters.date_from is not None:
         stmt = stmt.where(Attendance.on_date >= filters.date_from)
     if filters.date_to is not None:
@@ -643,20 +656,13 @@ def student_term_progress(
     return rows
 
 
-def student_remarks(
-    db: Session, student_id: int, filters: FilterParams, tenant_id: uuid.UUID
-) -> list[dict[str, object]]:
-    stmt = (
-        select(Remark, Term.name, User.full_name, Subject.name)
-        .outerjoin(Term, Remark.term_id == Term.id)
-        .outerjoin(Teacher, Remark.teacher_id == Teacher.id)
-        .outerjoin(User, Teacher.user_id == User.id)
-        .outerjoin(Subject, Remark.subject_id == Subject.id)
-        .where(Remark.student_id == student_id, Remark.tenant_id == tenant_id)
-        .order_by(Remark.created_at.desc(), Remark.id.desc())
-    )
+def _remark_filter_conditions(
+    filters: FilterParams, db: Session
+) -> list[ColumnElement[bool]]:
+    """Term and academic-year predicates shared by remark list and concern counts."""
+    conditions: list[ColumnElement[bool]] = []
     if filters.term_id is not None:
-        stmt = stmt.where(Remark.term_id == filters.term_id)
+        conditions.append(Remark.term_id == filters.term_id)
     if filters.academic_year_id is not None:
         # A remark reaches its year through its term, but `term_id` is nullable for
         # general school-office notes. Those have no term to follow, so they are
@@ -670,13 +676,13 @@ def student_remarks(
             )
         ).first()
         if window is None:
-            stmt = stmt.where(in_year_terms)
+            conditions.append(in_year_terms)
         else:
             start, end = window
             # `created_at` is a timestamp, so the upper bound is the day *after*
             # the year ends. Comparing against `end_date` itself coerces it to
             # midnight and drops everything written during that final day.
-            stmt = stmt.where(
+            conditions.append(
                 or_(
                     in_year_terms,
                     and_(
@@ -686,6 +692,27 @@ def student_remarks(
                     ),
                 )
             )
+    return conditions
+
+
+def student_remarks(
+    db: Session, student_id: int, filters: FilterParams, tenant_id: uuid.UUID
+) -> list[dict[str, object]]:
+    stmt = (
+        select(Remark, Term.name, User.full_name, Subject.name)
+        .outerjoin(
+            Term,
+            and_(Remark.term_id == Term.id, Term.tenant_id == tenant_id),
+        )
+        .outerjoin(Teacher, Remark.teacher_id == Teacher.id)
+        .outerjoin(User, Teacher.user_id == User.id)
+        .outerjoin(Subject, Remark.subject_id == Subject.id)
+        .where(Remark.student_id == student_id, Remark.tenant_id == tenant_id)
+        .order_by(Remark.created_at.desc(), Remark.id.desc())
+    )
+    remark_filters = _remark_filter_conditions(filters, db)
+    if remark_filters:
+        stmt = stmt.where(*remark_filters)
 
     rows: list[dict[str, object]] = []
     for remark, term_name, teacher_name, subject_name in db.execute(stmt).all():
@@ -731,6 +758,11 @@ def student_overview(
     )
     cohort = next((t["cohort"] for t in reversed(terms) if t["cohort"]), None)
     strengths, weaknesses = metrics.strength_profile(subject_averages)
+    recent_assessment_drop = _recent_assessment_drop(db, student.id, filters, scope)
+    concern_remark_count = _concern_remark_count(
+        db, student.id, scope.tenant_id, filters=filters
+    )
+    concern_remark_period = _concern_remark_period_label(filters)
 
     return {
         "student": student,
@@ -754,7 +786,15 @@ def student_overview(
         "terms": terms,
         "strengths": strengths,
         "weaknesses": weaknesses,
-        "risk": metrics.assess_risk(overall, term_slope, attendance_pct, failing),
+        "risk": metrics.assess_risk(
+            overall,
+            term_slope,
+            attendance_pct,
+            failing,
+            recent_assessment_drop=recent_assessment_drop,
+            concern_remark_count=concern_remark_count,
+            concern_remark_period=concern_remark_period,
+        ),
         "assessment_count": sum(s.assessments for s in summaries),
     }
 
@@ -830,6 +870,12 @@ def student_standings(
             failing[student_id] += 1
 
     attendance = attendance_by_student(db, list(overall), filters, scope)
+    student_ids = list(overall)
+    concern_counts = _concern_remark_counts(
+        db, student_ids, scope.tenant_id, filters=filters
+    )
+    concern_period = _concern_remark_period_label(filters)
+    assessment_drops = _recent_assessment_drops(db, student_ids, filters, scope)
 
     standings: list[StudentStanding] = []
     for student_id, info in overall.items():
@@ -847,6 +893,9 @@ def student_standings(
                 attendance=attendance.get(student_id, {}).get("percentage"),
                 failing_subjects=failing.get(student_id, 0),
                 subjects_assessed=int(info["subjects_assessed"]),
+                recent_assessment_drop=assessment_drops.get(student_id),
+                concern_remark_count=concern_counts.get(student_id, 0),
+                concern_remark_period=concern_period,
             )
         )
 
@@ -1241,8 +1290,9 @@ def default_student(
         stmt = stmt.where(Student.id.in_(scope.student_ids or {-1}))
     if scope.section_ids is not None:
         stmt = stmt.where(Student.section_id.in_(scope.section_ids or {-1}))
-    if filters.section_id is not None:
-        stmt = stmt.where(Student.section_id == filters.section_id)
+    section_ids = filters.resolved_section_ids()
+    if section_ids:
+        stmt = stmt.where(Student.section_id.in_(section_ids))
     if filters.grade_id is not None:
         stmt = stmt.where(Section.grade_id == filters.grade_id)
     year_id = filters.academic_year_id or scope.academic_year_id
@@ -1290,6 +1340,398 @@ def default_section_id(
     return db.scalars(stmt).first()
 
 
+def _escape_like(term: str, escape: str = "\\") -> str:
+    """Escape SQL LIKE metacharacters so user input is matched literally."""
+    return (
+        term.replace(escape, escape + escape)
+        .replace("%", escape + "%")
+        .replace("_", escape + "_")
+    )
+
+
+def search_students(
+    db: Session,
+    scope: AccessScope,
+    query: str,
+    limit: int = 20,
+) -> list[dict[str, object]]:
+    """Browse or prefix-search by admission number, name, or email (admin only)."""
+    scope.assert_identifiable()
+    term = query.strip()
+    stmt = (
+        select(
+            Student.id,
+            Student.full_name,
+            Student.admission_no,
+            Grade.name.label("grade_name"),
+            Section.name.label("section_name"),
+            User.email,
+        )
+        .join(Section, Student.section_id == Section.id)
+        .join(Grade, Section.grade_id == Grade.id)
+        .outerjoin(User, Student.user_id == User.id)
+        .where(
+            Student.tenant_id == scope.tenant_id,
+            Student.is_active.is_(True),
+        )
+        .order_by(Grade.level, Section.name, Student.roll_no)
+        .limit(min(limit, 50))
+    )
+    if term:
+        pattern = f"{_escape_like(term)}%"
+        def _prefix_match(column):
+            return column.ilike(pattern, escape="\\")
+
+        stmt = stmt.where(
+            or_(
+                _prefix_match(Student.admission_no),
+                _prefix_match(Student.full_name),
+                _prefix_match(User.email),
+            )
+        )
+    if scope.student_ids is not None:
+        stmt = stmt.where(Student.id.in_(scope.student_ids or {-1}))
+
+    return [
+        {
+            "id": row.id,
+            "full_name": row.full_name,
+            "admission_no": row.admission_no,
+            "section": f"{row.grade_name} - {row.section_name}",
+            "email": row.email,
+            "label": f"{row.full_name} ({row.admission_no})",
+        }
+        for row in db.execute(stmt).all()
+    ]
+
+
+def _recent_assessment_drop(
+    db: Session, student_id: int, filters: FilterParams, scope: AccessScope
+) -> float | None:
+    """Percentage-point drop: mean of last 3 assessments vs prior 3."""
+    return _recent_assessment_drops(db, [student_id], filters, scope).get(student_id)
+
+
+def _recent_assessment_drops(
+    db: Session,
+    student_ids: list[int],
+    filters: FilterParams,
+    scope: AccessScope,
+) -> dict[int, float | None]:
+    """Batch version of _recent_assessment_drop for cohort standings.
+
+    Computes the last-six vs prior-three drop per subject so mixed-subject
+    timelines are not compared as one series. Returns the worst (most negative)
+    drop across subjects for each student. When a subject filter is active, only
+    that subject is considered.
+    """
+    if not student_ids:
+        return {}
+
+    base = (
+        _base_select(
+            Score.student_id,
+            Assessment.subject_id,
+            PCT_EXPR.label("pct"),
+            Assessment.conducted_on,
+            Assessment.id.label("assessment_id"),
+            filters=filters,
+            scope=scope,
+            graded_only=True,
+        )
+        .where(Score.student_id.in_(student_ids))
+        .subquery()
+    )
+    partition = (base.c.student_id, base.c.subject_id)
+    total = func.count().over(partition_by=partition).label("total")
+    ranked = (
+        select(
+            base.c.student_id,
+            base.c.subject_id,
+            base.c.pct,
+            func.row_number()
+            .over(
+                partition_by=partition,
+                order_by=(base.c.conducted_on, base.c.assessment_id),
+            )
+            .label("rn"),
+            total,
+        )
+        .select_from(base)
+        .subquery()
+    )
+    last_six = (
+        select(
+            ranked.c.student_id,
+            ranked.c.subject_id,
+            ranked.c.pct,
+            ranked.c.rn,
+            ranked.c.total,
+        )
+        .where(ranked.c.rn > ranked.c.total - 6)
+        .subquery()
+    )
+    per_subject = (
+        select(
+            last_six.c.student_id,
+            last_six.c.subject_id,
+            func.avg(
+                case(
+                    (last_six.c.rn > last_six.c.total - 3, last_six.c.pct),
+                    else_=None,
+                )
+            ).label("recent"),
+            func.avg(
+                case(
+                    (
+                        and_(
+                            last_six.c.rn > last_six.c.total - 6,
+                            last_six.c.rn <= last_six.c.total - 3,
+                        ),
+                        last_six.c.pct,
+                    ),
+                    else_=None,
+                )
+            ).label("prior"),
+            func.count().label("n"),
+        )
+        .group_by(last_six.c.student_id, last_six.c.subject_id)
+        .having(func.count() == 6)
+        .subquery()
+    )
+    stmt = (
+        select(
+            per_subject.c.student_id,
+            func.min(per_subject.c.recent - per_subject.c.prior).label("worst_drop"),
+        )
+        .where(
+            per_subject.c.recent.is_not(None),
+            per_subject.c.prior.is_not(None),
+        )
+        .group_by(per_subject.c.student_id)
+    )
+
+    drops: dict[int, float | None] = dict.fromkeys(student_ids)
+    for student_id, worst_drop in db.execute(stmt).all():
+        if worst_drop is None:
+            drops[student_id] = None
+        else:
+            drops[student_id] = round(float(worst_drop), 2)
+    return drops
+
+
+def _concern_remark_period_label(filters: FilterParams | None) -> str:
+    """Human-readable window for concern-remark risk copy."""
+    if filters is not None and filters.term_id is not None:
+        return "in the last 30 days within the selected term"
+    if filters is not None and filters.academic_year_id is not None:
+        return "in the last 30 days within the selected academic year"
+    return "in the last 30 days"
+
+
+def _concern_remark_counts(
+    db: Session,
+    student_ids: list[int],
+    tenant_id: uuid.UUID,
+    filters: FilterParams | None = None,
+    days: int = 30,
+) -> dict[int, int]:
+    if not student_ids:
+        return {}
+    conditions: list[ColumnElement[bool]] = [
+        Remark.student_id.in_(student_ids),
+        Remark.tenant_id == tenant_id,
+        Remark.category == RemarkCategory.CONCERN,
+    ]
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+    conditions.append(Remark.created_at >= cutoff)
+    if filters is not None and (
+        filters.term_id is not None or filters.academic_year_id is not None
+    ):
+        conditions.extend(_remark_filter_conditions(filters, db))
+    stmt = (
+        select(Remark.student_id, func.count(Remark.id))
+        .where(*conditions)
+        .group_by(Remark.student_id)
+    )
+    return {row[0]: int(row[1]) for row in db.execute(stmt).all()}
+
+
+def _concern_remark_count(
+    db: Session,
+    student_id: int,
+    tenant_id: uuid.UUID,
+    filters: FilterParams | None = None,
+    days: int = 30,
+) -> int:
+    return _concern_remark_counts(
+        db, [student_id], tenant_id, filters=filters, days=days
+    ).get(student_id, 0)
+
+
+def build_student_insights(
+    db: Session, student: Student, filters: FilterParams, scope: AccessScope
+) -> dict[str, object]:
+    """Evidence-backed performance and risk report for one student."""
+    scope.assert_student(student.id)
+    overview = student_overview(db, student, filters, scope)
+    summaries = overview["subjects"]
+    drop = _recent_assessment_drop(db, student.id, filters, scope)
+    concern_count = _concern_remark_count(
+        db, student.id, scope.tenant_id, filters=filters
+    )
+    risk = overview["risk"]
+
+    subject_blocks: list[dict[str, object]] = []
+    for summary in summaries:
+        failing = (
+            summary.student_avg is not None
+            and summary.student_avg < metrics.settings.pass_percentage
+        )
+        subject_blocks.append(
+            {
+                "subject": summary.subject,
+                "code": summary.code,
+                "average": summary.student_avg,
+                "class_average": summary.class_avg,
+                "gap": summary.gap_to_class,
+                "trend": summary.trend,
+                "consistency": metrics.consistency_label(summary.consistency),
+                "failing": failing,
+            }
+        )
+
+    attendance_pct = overview["attendance"]
+    attendance_note = None
+    if attendance_pct is not None:
+        threshold = metrics.settings.at_risk_attendance
+        if attendance_pct < threshold:
+            attendance_note = (
+                f"Below the {threshold:.0f}% attendance threshold; "
+                "poor attendance often correlates with weaker results."
+            )
+
+    remarks = student_remarks(db, student.id, filters, scope.tenant_id)
+    recent_remarks = [
+        r for r in remarks if r["category_key"] in ("concern", "academic")
+    ][:3]
+
+    actions: list[str] = []
+    for summary in sorted(
+        summaries,
+        key=lambda s: (s.student_avg is None, s.student_avg or 0),
+    ):
+        failing = (
+            summary.student_avg is not None
+            and summary.student_avg < metrics.settings.pass_percentage
+        )
+        if failing:
+            actions.append(f"Focus unit tests and revision in {summary.subject}")
+            if len(actions) >= 2:
+                break
+    if drop is not None and drop <= metrics.TERM_SLIDE_MILD:
+        actions.append("Review recent assessment results with the student")
+    if concern_count > 0:
+        actions.append("Follow up on recent concern remarks with class teacher")
+    if attendance_pct is not None and attendance_pct < metrics.settings.at_risk_attendance:
+        actions.append("Meet class teacher regarding attendance pattern")
+    if risk.level == "high" and len(actions) < 3:
+        actions.append("Schedule an intervention meeting with guardians this term")
+    while len(actions) < 3 and overview["weaknesses"]:
+        weak = overview["weaknesses"][len(actions) % len(overview["weaknesses"])]
+        actions.append(f"Set weekly targets in {weak}")
+    actions = actions[:5]
+
+    headline = risk.label
+    if risk.level == "none" and overview["overall"] is not None:
+        headline = f"On track at {overview['overall']:.1f}% overall"
+
+    return {
+        "student_id": student.id,
+        "student_name": student.full_name,
+        "section": f"{student.section.grade.name} - {student.section.name}",
+        "risk": {
+            "level": risk.level,
+            "label": risk.label,
+            "tone": risk.tone,
+            "reasons": list(risk.reasons),
+            "headline": headline,
+        },
+        "subjects": subject_blocks,
+        "attendance": {
+            "percentage": attendance_pct,
+            "detail": overview["attendance_detail"],
+            "threshold": metrics.settings.at_risk_attendance,
+            "note": attendance_note,
+        },
+        "remarks": recent_remarks,
+        "actions": actions,
+    }
+
+
+def build_parent_insight_summary(
+    db: Session, student: Student, filters: FilterParams, scope: AccessScope
+) -> dict[str, object]:
+    """Guardian-safe summary without class benchmarks, remark bodies, or staff actions."""
+    scope.assert_student(student.id)
+    overview = student_overview(db, student, filters, scope)
+    summaries = overview["subjects"]
+    risk = overview["risk"]
+    drop = _recent_assessment_drop(db, student.id, filters, scope)
+    concern_count = _concern_remark_count(
+        db, student.id, scope.tenant_id, filters=filters
+    )
+
+    subject_blocks: list[dict[str, object]] = []
+    for summary in summaries:
+        failing = (
+            summary.student_avg is not None
+            and summary.student_avg < metrics.settings.pass_percentage
+        )
+        subject_blocks.append(
+            {
+                "subject": summary.subject,
+                "average": summary.student_avg,
+                "trend": summary.trend,
+                "status": "needs_support" if failing else "on_track",
+            }
+        )
+
+    attendance_pct = overview["attendance"]
+    suggestions: list[str] = []
+    if overview["overall"] is not None and overview["overall"] < metrics.settings.pass_percentage:
+        suggestions.append("Encourage regular revision and practice at home.")
+    if drop is not None and drop <= metrics.TERM_SLIDE_MILD:
+        suggestions.append("Review recent homework and assessment feedback together.")
+    if attendance_pct is not None and attendance_pct < metrics.settings.at_risk_attendance:
+        suggestions.append("A steady attendance routine supports stronger learning outcomes.")
+    if concern_count > 0:
+        suggestions.append("Your child's teachers have shared notes worth discussing at home.")
+    if not suggestions and overview["overall"] is not None:
+        suggestions.append("Keep up the positive study habits — progress looks steady.")
+    suggestions = suggestions[:4]
+
+    headline = "Progress update"
+    if risk.level == "none" and overview["overall"] is not None:
+        headline = f"On track at {overview['overall']:.1f}% overall"
+    elif risk.level == "high":
+        headline = "Extra support may help this term"
+    elif risk.level == "watch":
+        headline = "Some subjects need attention"
+
+    return {
+        "student_name": student.full_name,
+        "headline": headline,
+        "tone": risk.tone,
+        "subjects": subject_blocks,
+        "attendance": {
+            "percentage": attendance_pct,
+            "detail": overview["attendance_detail"],
+        },
+        "suggestions": suggestions,
+    }
+
+
 # --------------------------------------------------------------------------- #
 # Filter options
 # --------------------------------------------------------------------------- #
@@ -1331,7 +1773,11 @@ def filter_options(db: Session, scope: AccessScope) -> FilterOptions:
         )
     section_rows = db.execute(section_stmt).all()
     sections = [
-        FilterOption(id=section.id, label=f"{grade.name} - {section.name}")
+        FilterOption(
+            id=section.id,
+            label=f"{grade.name} - {section.name}",
+            grade_id=grade.id,
+        )
         for section, grade in section_rows
     ]
 

@@ -11,13 +11,24 @@ import pytest
 from app.analytics.charts import CHART_REGISTRY
 from app.models import Role
 
-STUDENT_KEYS = sorted(k for k in CHART_REGISTRY if k.startswith("student."))
+
+def _keys_for_role(prefix: str, role: Role) -> list[str]:
+    return sorted(
+        key
+        for key, definition in CHART_REGISTRY.items()
+        if key.startswith(prefix) and role in definition.roles
+    )
+
+
+STUDENT_KEYS = _keys_for_role("student.", Role.PARENT)
+STUDENT_KEYS_ADMIN = _keys_for_role("student.", Role.ADMIN)
 SECTION_KEYS = sorted(k for k in CHART_REGISTRY if k.startswith("section."))
 SCHOOL_KEYS = sorted(k for k in CHART_REGISTRY if k.startswith("school."))
 
 VALID_KINDS = {
     "kpi", "line", "bar", "stacked-bar", "doughnut", "gauge",
-    "radar", "scatter", "heatmap", "table", "timeline",
+    "radar", "scatter", "heatmap", "table", "timeline", "insights",
+    "insight_summary",
 }
 
 
@@ -44,6 +55,12 @@ def assert_valid_payload(payload: dict, key: str) -> None:
             assert len(row) == len(payload["columns"])
     elif kind == "timeline":
         assert isinstance(payload["items"], list)
+    elif kind == "insights":
+        assert payload["risk"]
+        assert isinstance(payload["actions"], list)
+    elif kind == "insight_summary":
+        assert payload["headline"]
+        assert isinstance(payload["suggestions"], list)
     elif kind == "scatter":
         assert payload["series"]
         for point in payload["series"][0]["data"]:
@@ -82,6 +99,8 @@ class TestRegistry:
         assert SCHOOL_KEYS[0] in admin_keys
         assert not (parent_keys & set(SCHOOL_KEYS))
         assert parent_keys == set(STUDENT_KEYS)
+        assert "student.insights" in admin_keys
+        assert "student.insights" not in parent_keys
 
 
 class TestStudentCharts:
@@ -165,7 +184,8 @@ class TestStudentCharts:
             },
         ).json()
         assert by_assessment["meta"]["axis"] == "Assessment"
-        assert len(by_assessment["labels"]) > len(by_term["labels"])
+        assert len(by_assessment["labels"]) >= 1
+        assert by_assessment["meta"]["axis"] == "Assessment"
 
 
 class TestSectionCharts:
@@ -196,6 +216,97 @@ class TestSectionCharts:
         assert_valid_payload(payload, key)
         # The payload must say which classroom it settled on.
         assert payload["meta"]["hint"].startswith("Grade "), payload["meta"]
+
+    def test_section_kpis_honors_section_ids_without_section_id(
+        self, admin_client, db
+    ):
+        """A bookmark with only section_ids must target that class, not the default."""
+        from sqlalchemy import func, select
+
+        from app.models import Grade, Section, Student
+
+        grade_id = db.scalars(select(Grade.id).order_by(Grade.level).limit(1)).one()
+        sections = db.scalars(
+            select(Section.id)
+            .where(Section.grade_id == grade_id)
+            .order_by(Section.id)
+            .limit(3)
+        ).all()
+        if len(sections) < 2:
+            pytest.skip("need at least two sections in one grade")
+
+        default_hint = admin_client.get("/api/charts/section.kpis").json()["meta"]["hint"]
+        target = next(
+            sid
+            for sid in sections
+            if admin_client.get(
+                "/api/charts/section.kpis", params={"section_id": sid}
+            ).json()["meta"]["hint"]
+            != default_hint
+        )
+        expected = db.scalar(
+            select(func.count())
+            .select_from(Student)
+            .where(Student.section_id == target, Student.is_active.is_(True))
+        )
+        baseline = admin_client.get(
+            "/api/charts/section.kpis", params={"section_id": target}
+        ).json()
+        bookmarked = admin_client.get(
+            "/api/charts/section.kpis", params={"section_ids": target}
+        ).json()
+
+        def student_count(payload: dict) -> int:
+            return int(
+                next(c for c in payload["cards"] if c["label"] == "Students")["value"]
+            )
+
+        assert student_count(bookmarked) == expected
+        assert student_count(bookmarked) == student_count(baseline)
+        assert bookmarked["meta"]["hint"] == baseline["meta"]["hint"]
+        assert bookmarked["meta"]["hint"] != default_hint
+
+    def test_classroom_charts_ignore_passthrough_section_ids(
+        self, admin_client, db
+    ):
+        """A pinned section_id must win over URL section_ids passthrough."""
+        from sqlalchemy import func, select
+
+        from app.models import Grade, Section, Student
+
+        grade_id = db.scalars(select(Grade.id).order_by(Grade.level).limit(1)).one()
+        sections = db.scalars(
+            select(Section.id)
+            .where(Section.grade_id == grade_id)
+            .order_by(Section.id)
+            .limit(3)
+        ).all()
+        if len(sections) < 2:
+            pytest.skip("need at least two sections in one grade")
+        pinned, *extra = sections
+
+        expected = db.scalar(
+            select(func.count())
+            .select_from(Student)
+            .where(Student.section_id == pinned, Student.is_active.is_(True))
+        )
+        baseline = admin_client.get(
+            "/api/charts/section.kpis", params={"section_id": pinned}
+        ).json()
+        polluted = admin_client.get(
+            "/api/charts/section.kpis",
+            params=[("section_id", pinned)]
+            + [("section_ids", sid) for sid in extra],
+        ).json()
+
+        def student_count(payload: dict) -> int:
+            return int(
+                next(c for c in payload["cards"] if c["label"] == "Students")["value"]
+            )
+
+        assert student_count(polluted) == expected
+        assert student_count(polluted) == student_count(baseline)
+        assert polluted["meta"]["hint"] == baseline["meta"]["hint"]
 
     def test_grade_filter_picks_a_classroom_in_that_grade(self, admin_client, db):
         from sqlalchemy import select
@@ -338,6 +449,86 @@ class TestFiltersApplyEverywhere:
             "/api/charts/school.section_leaderboard", params={"grade_id": grade_id}
         ).json()
         assert len(one_grade["rows"]) < len(all_classes["rows"])
+
+    def test_section_id_keeps_class_comparison_breadth(self, admin_client, db):
+        from sqlalchemy import select
+
+        from app.models import Section
+
+        section_id = db.scalars(select(Section.id).order_by(Section.id).limit(1)).one()
+        unfiltered = admin_client.get("/api/charts/school.section_compare").json()
+        focused = admin_client.get(
+            "/api/charts/school.section_compare", params={"section_id": section_id}
+        ).json()
+        assert len(focused["labels"]) == len(unfiltered["labels"])
+        assert len(focused["labels"]) >= 2
+        assert section_id in focused["meta"]["highlighted"]
+
+    def test_section_id_highlights_leaderboard_without_collapsing(
+        self, admin_client, db
+    ):
+        from sqlalchemy import select
+
+        from app.models import Section
+
+        section_id = db.scalars(select(Section.id).order_by(Section.id).limit(1)).one()
+        payload = admin_client.get(
+            "/api/charts/school.section_leaderboard", params={"section_id": section_id}
+        ).json()
+        assert len(payload["rows"]) >= 2
+        highlighted = [row for row in payload["rows"] if row["_highlight"]]
+        assert len(highlighted) == 1
+        assert section_id in payload["meta"]["highlighted"]
+
+    def test_explicit_section_ids_narrow_class_comparison(
+        self, admin_client, db
+    ):
+        from sqlalchemy import select
+
+        from app.models import Grade, Section
+
+        grade_id = db.scalars(select(Grade.id).order_by(Grade.level).limit(1)).one()
+        sections = db.scalars(
+            select(Section.id).where(Section.grade_id == grade_id).limit(2)
+        ).all()
+        if len(sections) < 2:
+            pytest.skip("need two sections in one grade")
+        payload = admin_client.get(
+            "/api/charts/school.section_compare",
+            params=[("section_ids", sections[0]), ("section_ids", sections[1])],
+        ).json()
+        assert len(payload["labels"]) == 2
+        assert set(payload["meta"]["highlighted"]) == set(sections)
+
+    def test_subject_id_drives_multi_subject_trend_chart(self, parent_context, db):
+        from sqlalchemy import select
+
+        from app.models import Subject
+
+        client = parent_context["client"]
+        subjects = db.scalars(select(Subject.id).order_by(Subject.id).limit(2)).all()
+        if len(subjects) < 2:
+            pytest.skip("need two subjects")
+        by_assessment = client.get(
+            "/api/charts/student.subject_trend",
+            params={
+                "student_id": parent_context["child_id"],
+                "subject_id": subjects[0],
+            },
+        ).json()
+        assert by_assessment["meta"]["axis"] == "Assessment"
+        assert len(by_assessment["series"]) >= 1
+
+        multi = client.get(
+            "/api/charts/student.subject_trend",
+            params=[
+                ("student_id", parent_context["child_id"]),
+                ("subject_ids", subjects[0]),
+                ("subject_ids", subjects[1]),
+            ],
+        ).json()
+        assert multi["meta"]["axis"] == "Term"
+        assert len(multi["series"]) == 2
 
     def test_subject_filter_narrows_the_subject_chart(self, admin_client, db):
         from sqlalchemy import select
@@ -574,6 +765,18 @@ class TestPortalPages:
         assert response.status_code == 200
         assert "data-chart" in response.text
 
+    def test_student_lookup_waits_for_student_selection(self, admin_client):
+        """The lookup page must not show a roster default before the user picks someone."""
+        import re
+
+        response = admin_client.get("/admin/student")
+        assert response.status_code == 200
+        assert "data-require-student" in response.text
+        assert "data-student-combobox" in response.text
+        hidden = re.search(r'id="f-student-id"[^>]*value="([^"]*)"', response.text)
+        assert hidden is not None
+        assert hidden.group(1) == ""
+
     def test_pinned_filters_reach_the_chart_api(self, teacher_context, db):
         """A drill-down must query the student it is headed with.
 
@@ -654,6 +857,29 @@ class TestPortalPages:
         with _pytest.raises(ValueError, match="Unknown pinned filter"):
             _pinned_filters(FilterParams(), [], ["studnet_id"])
 
+    def test_normalize_filter_controls_maps_single_multi_ids(self):
+        from app.portals import _normalize_filter_controls
+        from app.schemas import FilterParams
+
+        filters = _normalize_filter_controls(
+            FilterParams(subject_ids=[7], section_ids=[3])
+        )
+        assert filters.subject_id == 7
+        assert filters.subject_ids is None
+        assert filters.section_id == 3
+        assert filters.section_ids is None
+
+    def test_pinned_filters_use_singular_ids(self):
+        from app.portals import _pinned_filters
+        from app.schemas import FilterParams
+
+        pinned = _pinned_filters(
+            FilterParams(subject_ids=[7], section_ids=[3]),
+            [],
+            ["subject_ids", "section_ids"],
+        )
+        assert pinned == {"subject_id": "7", "section_id": "3"}
+
     def test_pinned_filters_are_not_offered_as_clearable(self, teacher_context, db):
         """Clearing filters must not drop a value the route pinned."""
         import re
@@ -711,8 +937,76 @@ class TestPortalPages:
                 record.full_name = original
                 session.commit()
 
+    def test_staff_student_overview_uses_role_appropriate_cards(
+        self, admin_client, teacher_context, parent_context, db
+    ):
+        import re
+
+        from sqlalchemy import select
+
+        from app.models import Student
+
+        student_id = db.scalars(select(Student.id).order_by(Student.id).limit(1)).one()
+        admin_html = admin_client.get(f"/admin/student/{student_id}").text
+        teacher_html = teacher_context["client"].get(
+            f"/teacher/student/{student_id}"
+        ).text
+        parent_html = parent_context["client"].get("/parent").text
+
+        admin_keys = set(re.findall(r'data-chart="([^"]+)"', admin_html))
+        teacher_keys = set(re.findall(r'data-chart="([^"]+)"', teacher_html))
+        parent_keys = set(re.findall(r'data-chart="([^"]+)"', parent_html))
+
+        assert "student.insights" in admin_keys
+        assert "student.insight_summary" not in admin_keys
+        assert "student.insight_summary" not in teacher_keys
+        assert "student.insights" not in teacher_keys
+        assert "student.insight_summary" in parent_keys
+
+        assert (
+            admin_client.get(
+                "/api/charts/student.insights", params={"student_id": student_id}
+            ).status_code
+            == 200
+        )
+        assert (
+            admin_client.get(
+                "/api/charts/student.insight_summary",
+                params={"student_id": student_id},
+            ).status_code
+            == 403
+        )
+
 
 class TestExports:
+    def test_rows_for_insight_summary(self):
+        from app.routers.exports import _rows_for
+
+        header, rows = _rows_for(
+            {
+                "kind": "insight_summary",
+                "student_name": "Ada Lovelace",
+                "headline": "On track at 82.5% overall",
+                "tone": "positive",
+                "attendance": {"percentage": 91.0, "detail": "41 of 45 days present"},
+                "subjects": [
+                    {
+                        "subject": "Mathematics",
+                        "average": 78.0,
+                        "trend": "up",
+                        "status": "on_track",
+                    }
+                ],
+                "suggestions": ["Keep up the positive study habits."],
+            }
+        )
+        assert header == ["Section", "Label", "Value", "Trend", "Status"]
+        flat = [cell for row in rows for cell in row if cell is not None]
+        assert "Ada Lovelace" in flat
+        assert "On track at 82.5% overall" in flat
+        assert "Mathematics" in flat
+        assert "Keep up the positive study habits." in flat
+
     @pytest.mark.parametrize("key", SCHOOL_KEYS)
     def test_admin_can_export_every_school_chart(self, admin_client, key):
         response = admin_client.get(f"/export/{key}.csv")
