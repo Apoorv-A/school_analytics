@@ -154,4 +154,16 @@ A Java/React platform previously existed in a separate `school-analytics-platfor
 
 See [docs/README.md](README.md) for product, architecture, ADRs, generated column dictionary, and chart catalog.
 
-**Last updated:** 2026-09-10 (multi-tenant foundation, RLS/throttle fixes, SQLite NullPool for local dashboards).
+### Operational learnings (failure log)
+
+When something breaks in dev or CI, add an entry under **[docs/learnings/](learnings/README.md)** — one markdown file per incident (symptoms, cause, effects, resolution). Config-repo incidents live in **school-analytics-config/docs/learnings/**.
+
+### CI before push
+
+```bash
+ruff check app seed tests tenant_config tenant_operator scripts
+PYTHONPATH=. pytest -q
+PYTHONPATH=. python scripts/docs_verify.py
+```
+
+**Last updated:** 2026-09-10 (learnings log, CI notes, SQLite NullPool, RLS/throttle fixes).

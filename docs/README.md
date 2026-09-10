@@ -15,6 +15,7 @@ Canonical documentation for the Python multi-tenant school analytics platform.
 | [analytics/chart-catalog.yaml](analytics/chart-catalog.yaml) | Machine-readable chart registry |
 | [analytics/chart-catalog.md](analytics/chart-catalog.md) | Generated human-readable chart catalog |
 | [operations/tenant-onboarding.md](operations/tenant-onboarding.md) | Onboard a school via config only |
+| [learnings/](learnings/README.md) | **Failure log** — symptoms, cause, fix (add one file per incident) |
 | [security/threat-model.md](security/threat-model.md) | Isolation, secrets, and child-data policy |
 | [adr/](adr/) | Architecture decision records |
 
@@ -45,4 +46,5 @@ python scripts/docs_verify.py   # fails if generated docs drift
 | Chart catalog | `app/analytics/charts.py` → `docs/analytics/chart-catalog.yaml` |
 | Tenant config schema | `tenant_config/models.py` → export via `python -m tenant_operator schema` |
 | Tenant YAML files | **school-analytics-config** repo |
+| Incident / failure log | `docs/learnings/` in each repo |
 | API | FastAPI OpenAPI at `/api/docs` when `DEBUG=true` |
