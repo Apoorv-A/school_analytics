@@ -81,8 +81,9 @@ def get_db() -> Generator[Session, None, None]:
 
 def _run_sqlite_migrations() -> None:
     """Apply pending Alembic revisions for local SQLite databases."""
-    from alembic import command
     from alembic.config import Config
+
+    from alembic import command
 
     alembic_cfg = Config(str(PROJECT_ROOT / "alembic.ini"))
     alembic_cfg.set_main_option("sqlalchemy.url", settings.database_url)
