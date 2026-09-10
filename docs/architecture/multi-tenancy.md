@@ -36,3 +36,10 @@ flowchart TD
 ## Session binding
 
 Session tokens include `tenant_id`. Login scopes email lookup to `(tenant_id, email)`. Hostname, token claim, and database transaction context must agree.
+
+## Local SQLite vs production Postgres
+
+| Environment | Database | Connection handling |
+| --- | --- | --- |
+| Local demo / tests | SQLite file (`school.db`) | `NullPool` — each checkout gets a fresh connection so parallel chart requests on a dashboard do not stall |
+| Production | PostgreSQL | Pooled connections (`pool_size=10`, `max_overflow=20`) with RLS via `SET LOCAL app.tenant_id` |

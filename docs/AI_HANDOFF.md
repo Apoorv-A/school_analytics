@@ -54,6 +54,7 @@ Multi-tenant school analytics SaaS: one shared FastAPI deployment per environmen
 | `app/tenant/settings.py` | Per-tenant thresholds and feature flags from `tenants.settings_json` |
 | `app/tenant/rls.py` | Postgres RLS setup (data tables only) |
 | `app/tenant/features.py` | Feature flag guards (exports, portals, remarks) |
+| `app/db.py` | SQLAlchemy engine; SQLite `NullPool` locally, pooled Postgres in production |
 | `app/deps.py` | Auth + `AccessScope` |
 | `app/analytics/` | Metrics, scoped queries, chart registry |
 | `tenant_config/models.py` | Canonical Pydantic tenant config (JSON Schema source) |
@@ -67,12 +68,21 @@ Multi-tenant school analytics SaaS: one shared FastAPI deployment per environmen
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python -m seed.generate --reset
+cp .env.example .env
+# Set SECRET_KEY, DEMO_MODE=true, DEMO_PASSWORD=Demo@12345 (must match seed)
 
-# /etc/hosts: 127.0.0.1 sunrise.localhost horizon.localhost
-uvicorn app.main:app --reload
-# http://sunrise.localhost:8000 — password Demo@12345 for seeded accounts
+python -m seed.generate --reset
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+**Hostnames:** seeded tenants are `sunrise.localhost` (full school) and `horizon.localhost` (minimal second tenant). On macOS, `*.localhost` usually resolves to `127.0.0.1` without editing `/etc/hosts`. If not, add `127.0.0.1 sunrise.localhost horizon.localhost`.
+
+- http://sunrise.localhost:8000 — demo password `Demo@12345` (when `DEMO_PASSWORD` matches seed)
+- http://horizon.localhost:8000 — same password; overlapping admin email proves per-tenant login scope
+
+**SQLite pooling:** local demo uses `NullPool` in `app/db.py` so parallel chart API calls on dashboards do not exhaust a fixed connection pool (symptom: 20–30s load, `QueuePool limit` errors in logs). Production PostgreSQL uses a normal sized pool.
+
+**Do not confuse passwords:** `Demo@12345` is the **web app** demo login. Your **Mac password** is only for `sudo` (e.g. editing `/etc/hosts`).
 
 Tests:
 
@@ -94,7 +104,11 @@ PYTHONPATH=. python scripts/docs_verify.py
 1. Edit `tenants/<tenant>/<env>.yaml` in **school-analytics-config**.
 2. PR runs `validate-config` (JSON Schema + Python `tenant_operator validate`).
 3. Deploy via protected tag or environment release (see config repo README).
-4. Operator reconciles tenant registry: `PYTHONPATH=. python -m tenant_operator apply --config=...`
+4. Operator reconciles tenant registry (from code repo, config file in sibling checkout):
+
+```bash
+PYTHONPATH=. python -m tenant_operator apply --config=../school-analytics-config/tenants/sunrise/dev.yaml
+```
 
 Environment image versions live in `environments/<env>/release.yaml`, not per-tenant files.
 
@@ -140,4 +154,4 @@ A Java/React platform previously existed in a separate `school-analytics-platfor
 
 See [docs/README.md](README.md) for product, architecture, ADRs, generated column dictionary, and chart catalog.
 
-**Last updated:** 2026-09-10 (multi-tenant Python foundation + Bugbot RLS/throttle fixes).
+**Last updated:** 2026-09-10 (multi-tenant foundation, RLS/throttle fixes, SQLite NullPool for local dashboards).

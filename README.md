@@ -63,11 +63,11 @@ python -m seed.generate          # add --reset to rebuild an existing database
 uvicorn app.main:app --reload
 ```
 
-Use `--host 0.0.0.0` and map hostnames in `/etc/hosts` (`127.0.0.1 sunrise.localhost horizon.localhost`) or pass the `Host` header when testing APIs.
+Use `--host 0.0.0.0 --port 8000`. On macOS, `sunrise.localhost` and `horizon.localhost` usually resolve without `/etc/hosts`; add `127.0.0.1 sunrise.localhost horizon.localhost` only if the browser cannot reach them.
 
 Open http://sunrise.localhost:8000 and sign in. The seeder prints the demo logins when it
 finishes; with `DEMO_MODE=true` the login page also lists them and fills them in on
-click.
+click. Default seed password is `Demo@12345` when `DEMO_PASSWORD` is set to that value before seeding.
 
 | Role | Email |
 | --- | --- |
@@ -76,14 +76,21 @@ click.
 | Parent | `ananya.rao@parent.sunrise.edu` |
 | Student | `ananya.rao@student.sunrise.edu` |
 
+Second tenant (isolation demo): http://horizon.localhost:8000 — Horizon admin also uses `principal@sunrise.edu` (same email, different tenant; proves login is hostname-scoped).
+
 The password for every seeded account is whatever `DEMO_PASSWORD` was set to when
 the database was seeded. These accounts exist only for synthetic data.
 
 ## Seeded data
 
-One school, grades 6 to 10 with two classes each: 150 students, 12 teachers, 8
-subjects, 3 terms, about 1,120 assessments and 16,800 scores, plus attendance and
-teacher remarks. Every student has a latent ability, per-subject aptitudes, and a
+Two demo tenants after `seed.generate --reset`:
+
+| Tenant | Hostname | Data |
+| --- | --- | --- |
+| **Sunrise Academy** | `sunrise.localhost` | Full school: grades 6–10, two classes each, 150 students, 12 teachers, 8 subjects, 3 terms, ~1,120 assessments and 16,800 scores, attendance and remarks |
+| **Horizon Academy** | `horizon.localhost` | Minimal second tenant to prove isolation and per-tenant login (overlapping admin email, separate data) |
+
+Every Sunrise student has a latent ability, per-subject aptitudes, and a
 trajectory (steady, improving, declining, struggling), so the trend, consistency,
 and at-risk analytics have something real to find.
 
@@ -96,9 +103,11 @@ what makes "throughout the year" a genuine timeline rather than two data points.
 app/
   main.py            app wiring, security headers, error pages
   config.py          settings from the environment
-  models.py          academic years, terms, grades, sections, subjects, users,
-                     students, teachers, assignments, assessments, scores,
-                     attendance, remarks
+  db.py              SQLAlchemy engine (SQLite NullPool locally, Postgres pool in prod)
+  models.py          tenants, domains, academic years, terms, grades, sections,
+                     subjects, users, students, teachers, assignments, assessments,
+                     scores, attendance, remarks
+  tenant/            hostname middleware, context, RLS, per-tenant settings
   schemas.py         validated filter parameters
   security.py        bcrypt hashing, signed session tokens
   deps.py            AccessScope: the row-level authorization guard
@@ -111,8 +120,12 @@ app/
   routers/           auth, parent, student, teacher, admin, chart API, CSV export
   templates/         Jinja2 pages and card components
   static/            design system CSS, filter bar, Chart.js helpers
-seed/generate.py     synthetic school generator
-tests/               metrics, authorization, chart and page coverage
+tenant_config/       Pydantic models for tenant YAML (schema source)
+tenant_operator/     CLI: validate, apply, schema export
+seed/generate.py     synthetic school generator (sunrise + horizon tenants)
+docs/                product, architecture, ADRs, generated catalogs
+deploy/              Dockerfile, docker-compose, Helm chart
+tests/               metrics, authorization, tenant isolation, chart coverage
 ```
 
 Every visualization is a JSON endpoint under `/api/charts/<key>`, so the filter bar

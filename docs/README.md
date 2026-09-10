@@ -27,7 +27,7 @@ Tenant YAML, deploy tags, and config CI live in a **separate repo**:
 Clone it beside this project when working on onboarding or deployment:
 
 ```bash
-git clone https://github.com/Apoorv-A/school-analytics-config.git
+git clone https://github.com/Apoorv-A/school-analytics-config.git ../school-analytics-config
 ```
 
 ## Regeneration

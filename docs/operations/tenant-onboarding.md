@@ -8,7 +8,7 @@
 
 ## Steps
 
-1. Add `config/tenants/<tenant-key>/<env>.yaml` following `tenant.schema.json`.
+1. Add `tenants/<tenant-key>/<env>.yaml` in the **school-analytics-config** repository (see `tenant.schema.json` there).
 2. Open PR; `validate-config` workflow must pass (schema, duplicate hostname, no plaintext secrets).
 3. Merge and tag: `<tenant>_<env>_v<semver>` (environment release tag for shared deploy).
 4. Pipeline runs tenant operator reconcile for changed tenants.

@@ -15,7 +15,7 @@
 | IDOR via student/section IDs | `AccessScope` returns 404 for out-of-scope IDs |
 | Parent sees classmate names | `cohort_view()` + `assert_identifiable()` |
 | Session hijack | Signed httponly cookies, SameSite=strict, tenant-bound tokens |
-| Credential stuffing | Login rate limiting per email+IP hash |
+| Credential stuffing | Login rate limiting per `(tenant_id, email, client IP)` |
 | Secrets in git | Config CI scans tenant YAML; secrets in K8s only |
 | SQL injection | SQLAlchemy parameterized queries only |
 
