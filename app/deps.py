@@ -29,7 +29,7 @@ from app.models import (
 )
 from app.schemas import FilterParams
 from app.security import read_session_token
-from app.tenant.context import get_tenant_context, require_tenant_context
+from app.tenant.context import require_tenant_context
 
 
 class NotAuthenticatedError(Exception):

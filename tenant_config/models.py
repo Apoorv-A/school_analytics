@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from enum import Enum
-from typing import Literal
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-class TenantEnvironment(str, Enum):
+class TenantEnvironment(StrEnum):
     DEV = "dev"
     STG = "stg"
     PROD = "prod"

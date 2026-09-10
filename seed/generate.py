@@ -431,7 +431,12 @@ def generate(reset: bool = False) -> dict[str, object]:
 
         grades: list[Grade] = []
         for level in GRADE_LEVELS:
-            grade = Grade(tenant_id=tenant_id, school_id=school.id, name=f"Grade {level}", level=level)
+            grade = Grade(
+                tenant_id=tenant_id,
+                school_id=school.id,
+                name=f"Grade {level}",
+                level=level,
+            )
             db.add(grade)
             grades.append(grade)
         db.flush()

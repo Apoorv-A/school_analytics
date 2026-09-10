@@ -6,8 +6,8 @@ from pathlib import Path
 
 
 def write_column_dictionary(root: Path) -> None:
-    from app.db import Base
     from app import models  # noqa: F401
+    from app.db import Base
 
     data_dir = root / "docs" / "data"
     data_dir.mkdir(parents=True, exist_ok=True)

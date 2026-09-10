@@ -6,10 +6,9 @@ import os
 import uuid
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db import SessionLocal, init_db
+from app.db import SessionLocal
 from app.models import School, Tenant, TenantDomain
 from tenant_config.models import TenantConfigDocument
 

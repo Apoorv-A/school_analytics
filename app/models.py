@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import UTC, date, datetime
 import enum
 import uuid
-from datetime import UTC, date, datetime
 
 from sqlalchemy import (
     Boolean,

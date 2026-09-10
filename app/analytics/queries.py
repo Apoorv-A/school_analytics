@@ -14,11 +14,11 @@ scope predicates are added here, not by the caller.
 
 from __future__ import annotations
 
+import uuid
 from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, timedelta
-import uuid
 
 from sqlalchemy import Select, and_, case, func, or_, select
 from sqlalchemy.orm import Session

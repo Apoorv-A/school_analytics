@@ -11,13 +11,20 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def main() -> int:
-    subprocess.run(
+    subprocess.run(  # noqa: S603
         [sys.executable, str(ROOT / "scripts" / "docs_generate.py")],
         check=True,
         cwd=ROOT,
     )
-    result = subprocess.run(
-        ["git", "diff", "--quiet", "docs/analytics/chart-catalog.yaml", "docs/analytics/chart-catalog.md", "docs/data/column-dictionary.md"],
+    result = subprocess.run(  # noqa: S603, S607
+        [
+            "git",
+            "diff",
+            "--quiet",
+            "docs/analytics/chart-catalog.yaml",
+            "docs/analytics/chart-catalog.md",
+            "docs/data/column-dictionary.md",
+        ],
         cwd=ROOT,
     )
     if result.returncode != 0:
