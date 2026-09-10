@@ -17,7 +17,7 @@ from app.tenant.settings import TenantSettings
 
 logger = logging.getLogger(__name__)
 
-_EXEMPT_PREFIXES = ("/static/", "/healthz")
+_EXEMPT_PREFIXES = ("/static/", "/healthz", "/favicon.ico")
 
 
 def _normalize_host(raw: str | None) -> str | None:
