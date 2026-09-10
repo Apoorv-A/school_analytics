@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
 import enum
 import uuid
+from datetime import UTC, date, datetime
 
 from sqlalchemy import (
     Boolean,
@@ -19,8 +19,8 @@ from sqlalchemy import (
     JSON,
     String,
     Text,
-    Uuid,
     UniqueConstraint,
+    Uuid,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 

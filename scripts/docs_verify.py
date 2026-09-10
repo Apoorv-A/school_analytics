@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -16,9 +17,13 @@ def main() -> int:
         check=True,
         cwd=ROOT,
     )
-    result = subprocess.run(  # noqa: S603, S607
+    git = shutil.which("git")
+    if git is None:
+        print("git not found on PATH")
+        return 1
+    result = subprocess.run(  # noqa: S603
         [
-            "git",
+            git,
             "diff",
             "--quiet",
             "docs/analytics/chart-catalog.yaml",
