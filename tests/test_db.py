@@ -5,8 +5,6 @@ from __future__ import annotations
 import sqlite3
 from unittest.mock import MagicMock
 
-import pytest
-
 from app.db import _apply_sqlite_pragmas
 
 
