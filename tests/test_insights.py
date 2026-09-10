@@ -69,6 +69,11 @@ class TestStandingRiskSignals:
         student = db.scalars(
             select(Student).where(Student.tenant_id == tenant.id).limit(1)
         ).one()
+        filters = FilterParams(student_id=student.id)
+        baseline = queries._concern_remark_counts(
+            db, [student.id], tenant.id, filters=filters
+        ).get(student.id, 0)
+
         db.add(
             Remark(
                 tenant_id=tenant.id,
@@ -92,11 +97,9 @@ class TestStandingRiskSignals:
             subject_ids=None,
             students=(),
         )
-        standings = queries.student_standings(
-            db, FilterParams(student_id=student.id), scope
-        )
+        standings = queries.student_standings(db, filters, scope)
         standing = next(item for item in standings if item.student_id == student.id)
-        assert standing.concern_remark_count == 1
+        assert standing.concern_remark_count == baseline + 1
         assert standing.risk.is_at_risk
         assert any("concern remark" in reason for reason in standing.risk.reasons)
 
@@ -158,6 +161,10 @@ class TestStandingRiskSignals:
         ).all()
         assert len(terms) >= 2
         first_term, second_term = terms[0], terms[1]
+        term_filter = FilterParams(student_id=student.id, term_id=first_term.id)
+        baseline = queries._concern_remark_counts(
+            db, [student.id], tenant.id, filters=term_filter
+        ).get(student.id, 0)
 
         db.add_all(
             [
@@ -193,13 +200,9 @@ class TestStandingRiskSignals:
             subject_ids=None,
             students=(),
         )
-        standings = queries.student_standings(
-            db,
-            FilterParams(student_id=student.id, term_id=first_term.id),
-            scope,
-        )
+        standings = queries.student_standings(db, term_filter, scope)
         standing = next(item for item in standings if item.student_id == student.id)
-        assert standing.concern_remark_count == 1
+        assert standing.concern_remark_count == baseline + 1
         assert any("selected term" in reason for reason in standing.risk.reasons)
 
     def test_concern_remarks_intersect_term_and_30_day_window(self, db):
