@@ -55,6 +55,20 @@ Generated from SQLAlchemy models. Do not edit by hand.
 | `name` | VARCHAR(60) | no | — |
 | `level` | INTEGER | no | — |
 
+## `import_runs`
+
+| Column | Type | Nullable | Notes |
+| --- | --- | --- | --- |
+| `id` | INTEGER | no | PK |
+| `tenant_id` | CHAR(32) | no | FK → tenants.id |
+| `status` | VARCHAR(9) | no | — |
+| `source` | VARCHAR(40) | no | — |
+| `file_summary` | VARCHAR(255) | yes | — |
+| `row_counts` | JSON | yes | — |
+| `error_count` | INTEGER | no | — |
+| `created_at` | DATETIME | no | — |
+| `created_by_user_id` | INTEGER | yes | FK → users.id |
+
 ## `remarks`
 
 | Column | Type | Nullable | Notes |
@@ -67,6 +81,8 @@ Generated from SQLAlchemy models. Do not edit by hand.
 | `subject_id` | INTEGER | yes | FK → subjects.id |
 | `category` | VARCHAR(11) | no | — |
 | `body` | TEXT | no | — |
+| `external_id` | VARCHAR(64) | yes | — |
+| `source_system` | VARCHAR(40) | yes | — |
 | `created_at` | DATETIME | no | — |
 
 ## `schools`

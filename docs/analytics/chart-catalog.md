@@ -15,6 +15,7 @@ Generated from `app/analytics/charts.py`. Do not edit by hand.
 | `student.assessment_table` | Every assessment | table | admin, parent, student, teacher |
 | `student.remarks` | Teacher remarks | timeline | admin, parent, student, teacher |
 | `student.insights` | Performance insights | insights | admin |
+| `student.insight_summary` | Progress summary | insight_summary | parent, student |
 | `section.kpis` | Classroom summary | kpi | admin, teacher |
 | `section.distribution` | Score distribution | chart | admin, teacher |
 | `section.assessment_averages` | Average by assessment | chart | admin, teacher |

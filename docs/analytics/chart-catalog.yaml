@@ -84,6 +84,12 @@ charts:
   kind: insights
   roles:
   - admin
+- key: student.insight_summary
+  title: Progress summary
+  kind: insight_summary
+  roles:
+  - parent
+  - student
 - key: section.kpis
   title: Classroom summary
   kind: kpi
