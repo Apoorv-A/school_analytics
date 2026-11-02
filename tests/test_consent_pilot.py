@@ -4,15 +4,34 @@ from __future__ import annotations
 
 import re
 
-from app.models import ConsentPurpose, ConsentStatus
+import pytest
+from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
+
+from app.models import ConsentPurpose, ConsentStatus, Tenant
+
+
+@pytest.fixture(autouse=True)
+def _reset_sunrise_parental_consent(db):
+    """These tests toggle features.parentalConsent; restore seed defaults after each."""
+    yield
+    tenant = db.scalars(select(Tenant).where(Tenant.key == "sunrise")).one()
+    settings = dict(tenant.settings_json or {})
+    features = dict(settings.get("features") or {})
+    changed = False
+    if features.pop("parentalConsent", None) is not None:
+        settings["features"] = features
+        changed = True
+    if "consent" in settings:
+        settings.pop("consent")
+        changed = True
+    if changed:
+        tenant.settings_json = settings
+        flag_modified(tenant, "settings_json")
+        db.commit()
 
 
 def _enable_consent_pilot(db, *, tenant_key: str = "sunrise") -> None:
-    from sqlalchemy import select
-    from sqlalchemy.orm.attributes import flag_modified
-
-    from app.models import Tenant
-
     tenant = db.scalars(select(Tenant).where(Tenant.key == tenant_key)).one()
     settings = dict(tenant.settings_json or {})
     features = dict(settings.get("features") or {})
@@ -24,6 +43,20 @@ def _enable_consent_pilot(db, *, tenant_key: str = "sunrise") -> None:
     tenant.settings_json = settings
     flag_modified(tenant, "settings_json")
     db.commit()
+
+
+def test_consent_nav_hidden_on_parent_pages_by_default(parent_context):
+    response = parent_context["client"].get("/parent/progress")
+    assert response.status_code == 200
+    assert "/parent/consent" not in response.text
+
+
+def test_consent_nav_on_parent_progress_when_enabled(parent_context, db):
+    _enable_consent_pilot(db)
+    response = parent_context["client"].get("/parent/progress")
+    assert response.status_code == 200
+    assert "/parent/consent" in response.text
+    assert "Privacy" in response.text
 
 
 def test_consent_page_hidden_without_feature_flag(parent_context):

@@ -74,6 +74,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "apply":
+        from app.config import settings
+
+        target_url = args.database_url or settings.database_url
+        print(f"Applying to database: {target_url}", file=sys.stderr)
         outcome = apply(args.config, database_url=args.database_url)
         print(json.dumps(outcome, indent=2))
         return 0
