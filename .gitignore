@@ -2,6 +2,7 @@
 config/
 platform/
 school-analytics-config-clone/
+school-analytics-config/
 
 # Environment / secrets
 .env
