@@ -178,7 +178,7 @@ def consent_status_for_guardian(
     scope: AccessScope = Depends(get_access_scope),
     user: User = Depends(require_roles(Role.PARENT)),
 ) -> GuardianConsentSummary:
-    student_ids = sorted(scope.student_ids)
+    student_ids = sorted(scope.student_ids or ())
     if not student_ids:
         return GuardianConsentSummary(guardian_user_id=user.id, students=[])
 

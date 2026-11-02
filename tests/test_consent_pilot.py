@@ -70,6 +70,48 @@ def test_consent_page_renders_when_enabled(parent_context, db):
     assert response.status_code == 200
     assert "Privacy" in response.text and "consent" in response.text.lower()
     assert "2026-pilot" in response.text
+    assert "Grant" in response.text
+    assert "Withdraw" in response.text
+    assert "Student analytics" in response.text
+    assert "Core data processing" in response.text
+    assert 'data-purpose="student_analytics"' in response.text
+    assert f'data-student-id="{parent_context["child_id"]}"' in response.text
+
+
+def test_consent_page_grant_and_withdraw_via_api(parent_context, db):
+    _enable_consent_pilot(db)
+    child_id = parent_context["child_id"]
+    client = parent_context["client"]
+
+    grant = client.post(
+        "/api/consent/records",
+        json={
+            "student_id": child_id,
+            "purpose": ConsentPurpose.DATA_PROCESSING.value,
+            "status": ConsentStatus.GRANTED.value,
+            "privacy_notice_version": "2026-pilot",
+        },
+    )
+    assert grant.status_code == 201
+
+    page = client.get("/parent/consent")
+    assert page.status_code == 200
+    assert "Granted" in page.text
+
+    withdraw = client.post(
+        "/api/consent/records",
+        json={
+            "student_id": child_id,
+            "purpose": ConsentPurpose.DATA_PROCESSING.value,
+            "status": ConsentStatus.WITHDRAWN.value,
+            "privacy_notice_version": "2026-pilot",
+        },
+    )
+    assert withdraw.status_code == 201
+
+    page2 = client.get("/parent/consent")
+    assert page2.status_code == 200
+    assert "Withdrawn" in page2.text
 
 
 def test_insight_summary_gated_until_analytics_consent(parent_context, db, admin_client):
