@@ -1,6 +1,7 @@
 # Local checkouts that belong in separate repos (do not commit)
 config/
 platform/
+school-analytics-config-clone/
 
 # Environment / secrets
 .env

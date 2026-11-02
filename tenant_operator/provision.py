@@ -80,6 +80,7 @@ def reconcile_tenant(
             "academics": doc.academics.model_dump(),
             "features": doc.features.model_dump(),
             "portal": doc.portal.model_dump(),
+            "consent": doc.consent.model_dump(),
             "attendance": doc.attendance.model_dump(),
             "auth": doc.auth.model_dump(),
             "erp": {
