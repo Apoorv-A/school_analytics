@@ -22,6 +22,8 @@ pip-compile --output-file=requirements.lock requirements.txt
 
 Commit both files. CI fails when `requirements.lock` drifts from `requirements.txt`.
 
+Do not commit a private `--index-url` into `requirements.lock`; GitHub Actions installs from the public PyPI index.
+
 ### Production image installs
 
 `deploy/Dockerfile` installs from `requirements.lock` (not floating ranges) so every release image resolves the same package versions.

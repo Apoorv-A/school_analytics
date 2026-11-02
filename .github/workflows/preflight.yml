@@ -40,4 +40,6 @@ jobs:
         uses: azure/setup-helm@v4
         with:
           version: v3.16.2
-      - run: helm lint deploy/helm/school-analytics
+      - run: |
+          helm lint deploy/helm/school-analytics \
+            --set-string image.tag=ci
