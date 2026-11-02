@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Your choices</h2>
+  <p class="muted">
+    Under our data protection pilot, you can grant or withdraw consent for specific uses of your
+    child's information. Analytics summaries stay hidden until you grant
+    <strong>Student analytics</strong> consent. You can change your choice at any time.
+  </p>
+  <p class="muted">Privacy notice version: <code id="privacy-notice-version">{{ privacy_notice_version }}</code></p>
+</section>
+
+<div id="consent-students"></div>
+
+<script>
+(function () {
+  const noticeVersion = document.getElementById("privacy-notice-version").textContent.trim();
+  const childNames = {
+    {% for child in children %}
+    {{ child.id }}: {{ child.name | tojson }},
+    {% endfor %}
+  };
+
+  const purposeLabels = {
+    student_analytics: "Student analytics",
+    data_processing: "Core data processing",
+  };
+
+  function statusLabel(status) {
+    if (status === "granted") return "Granted";
+    if (status === "withdrawn") return "Withdrawn";
+    return "Not recorded";
+  }
+
+  function render(summary) {
+    const root = document.getElementById("consent-students");
+    root.innerHTML = "";
+    (summary.students || []).forEach(function (student) {
+      const section = document.createElement("section");
+      section.className = "card";
+      section.style.marginTop = "16px";
+      const title = childNames[student.student_id] || ("Student #" + student.student_id);
+      section.innerHTML = "<h2>" + title + "</h2>";
+      const table = document.createElement("div");
+      table.className = "state-table";
+      (student.purposes || []).forEach(function (row) {
+        const block = document.createElement("div");
+        block.style.marginBottom = "12px";
+        block.innerHTML =
+          "<p><strong>" + (purposeLabels[row.purpose] || row.purpose) + "</strong> — " +
+          statusLabel(row.status) +
+          (row.recorded_at ? " <span class=\"muted\">(updated " + row.recorded_at.slice(0, 10) + ")</span>" : "") +
+          "</p>";
+        const actions = document.createElement("div");
+        actions.className = "filters__actions";
+        const grant = document.createElement("button");
+        grant.type = "button";
+        grant.className = "btn btn--primary";
+        grant.textContent = "Grant";
+        grant.addEventListener("click", function () {
+          record(student.student_id, row.purpose, "granted");
+        });
+        const withdraw = document.createElement("button");
+        withdraw.type = "button";
+        withdraw.className = "btn";
+        withdraw.textContent = "Withdraw";
+        withdraw.addEventListener("click", function () {
+          record(student.student_id, row.purpose, "withdrawn");
+        });
+        actions.appendChild(grant);
+        actions.appendChild(withdraw);
+        block.appendChild(actions);
+        table.appendChild(block);
+      });
+      section.appendChild(table);
+      root.appendChild(section);
+    });
+  }
+
+  function record(studentId, purpose, status) {
+    fetch("/api/consent/records", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: Object.assign({"Content-Type": "application/json"}, csrfHeaders()),
+      body: JSON.stringify({
+        student_id: studentId,
+        purpose: purpose,
+        status: status,
+        privacy_notice_version: noticeVersion,
+      }),
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error("Request failed");
+        return load();
+      })
+      .catch(function () {
+        alert("Could not save your choice. Please try again.");
+      });
+  }
+
+  function load() {
+    return fetch("/api/consent/guardians/me", { credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(render);
+  }
+
+  load();
+})();
+</script>
+{% endblock %}

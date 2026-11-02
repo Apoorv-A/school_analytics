@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.consent.status import latest_by_purpose
 from app.db import get_db
 from app.deps import AccessScope, get_access_scope, require_roles
 from app.models import (
@@ -72,19 +73,10 @@ def _load_student(db: Session, scope: AccessScope, student_id: int) -> Student:
     return student
 
 
-def _latest_by_purpose(
-    records: list[ParentalConsentRecord],
-) -> dict[ConsentPurpose, ParentalConsentRecord]:
-    latest: dict[ConsentPurpose, ParentalConsentRecord] = {}
-    for record in sorted(records, key=lambda row: row.recorded_at):
-        latest[record.purpose] = record
-    return latest
-
-
 def _student_status_from_records(
     student_id: int, records: list[ParentalConsentRecord]
 ) -> StudentConsentStatus:
-    latest = _latest_by_purpose(records)
+    latest = latest_by_purpose(records)
     purposes: list[ConsentPurposeStatus] = []
     for purpose in ConsentPurpose:
         row = latest.get(purpose)

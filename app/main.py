@@ -28,6 +28,7 @@ from app.routers import (
     import_mapping,
     interventions,
     parent,
+    parent_consent_page,
     platform,
     remarks,
     student,
@@ -99,6 +100,7 @@ app.add_middleware(TrustedProxyMiddleware)
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
 
 app.include_router(auth.router)
+app.include_router(parent_consent_page.router)
 app.include_router(parent.router)
 app.include_router(student.router)
 app.include_router(teacher.router)

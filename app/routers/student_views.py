@@ -222,7 +222,9 @@ def build_student_portal(prefix: str, role: Role, tag: str) -> APIRouter:
             subtitle=student_subtitle(child),
             active_nav=prefix if page_key == "overview" else f"{prefix}/{page_key}",
             visible_filters=page["filters"],
-            cards=filter_portal_cards(page["cards"], scope),
+            cards=filter_portal_cards(
+                page["cards"], scope, db=db, student_id=child.id
+            ),
             # Resolved through the scope above. A guardian with one child gets no
             # student control, so the charts would otherwise receive nothing.
             pinned=["student_id"],

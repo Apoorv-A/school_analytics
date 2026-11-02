@@ -39,6 +39,7 @@ NAV: dict[Role, list[dict]] = {
                 {"href": "/parent/progress", "label": "Progress", "icon": "\u2197"},
                 {"href": "/parent/attendance", "label": "Attendance", "icon": "\u2713"},
                 {"href": "/parent/remarks", "label": "Teacher remarks", "icon": "\u201c"},
+                {"href": "/parent/consent", "label": "Privacy & consent", "icon": "\u2691"},
             ],
         }
     ],
@@ -108,6 +109,8 @@ def portal_nav(role: Role, settings: TenantSettings) -> list[dict]:
             if href in ("/parent/remarks", "/student/remarks"):
                 if not settings.remarks_enabled:
                     continue
+            if href == "/parent/consent" and not settings.parental_consent_enabled:
+                continue
             items.append(item)
         if items:
             groups.append({**group, "items": items})

@@ -41,3 +41,11 @@ def require_interventions_enabled() -> None:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Not found.",
         )
+
+
+def require_parental_consent_enabled() -> None:
+    if not require_tenant_context().settings.parental_consent_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not found.",
+        )

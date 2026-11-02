@@ -19,6 +19,7 @@ Phase 2 extends ingest and insight delivery while keeping analytics read-mostly.
 - **Import apply fixes** — school structure, score upsert, extract-error guards, upload/zip size caps, temp dir cleanup.
 - **Parent-safe `student.insight_summary`** — guardian/student portal card without class benchmarks, remark bodies, or staff actions.
 - **ERP webhook ingest** — `POST /api/erp/import` with HMAC-signed requests when `features.bulkImport` is enabled. Tenant config stores `erp.webhookSecretRef` (and optional `erp.webhookSigningSecretRef`); runtime resolves `SA_SECRET_<REF>` from deployment secrets.
+- **Parental consent pilot** — when `features.parentalConsent` is enabled: parent portal `/parent/consent` (grant/withdraw via existing `/api/consent/*`), and `student.insight_summary` is hidden until **Student analytics** consent is granted.
 
 ## Next slices (not yet built)
 
