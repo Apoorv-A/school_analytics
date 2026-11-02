@@ -79,7 +79,7 @@ class TestTenantScopedData:
 
         from app.main import app
         from app.models import Role, Tenant, User
-        from app.routers import auth as auth_module
+        from app.throttle import reset_login_throttle_store_for_tests
         from seed.generate import DEMO_PASSWORD, HORIZON_HOST, SUNRISE_HOST
 
         sunrise = db.scalars(select(Tenant).where(Tenant.key == "sunrise")).one()
@@ -89,7 +89,7 @@ class TestTenantScopedData:
             )
         ).one()
 
-        auth_module._attempts.clear()
+        reset_login_throttle_store_for_tests()
         sunrise_client = TestClient(
             app, headers={"Host": SUNRISE_HOST}, follow_redirects=False
         )
@@ -110,7 +110,7 @@ class TestTenantScopedData:
             "/login", data={"email": email, "password": DEMO_PASSWORD}
         )
         assert allowed.status_code == 303
-        auth_module._attempts.clear()
+        reset_login_throttle_store_for_tests()
 
     def test_operator_validate_sample_config(self, tmp_path):
         import yaml

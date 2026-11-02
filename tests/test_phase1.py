@@ -142,6 +142,43 @@ class TestRemarksApi:
         )
         assert response.status_code == 404
 
+    def test_teacher_cannot_remark_unassigned_subject_in_own_section(
+        self, teacher_context, db
+    ):
+        from sqlalchemy import select
+
+        from app.models import Subject, TeacherAssignment
+
+        teacher_id = teacher_context["teacher_id"]
+        student_id = teacher_context["own_student_id"]
+        student = db.get(Student, student_id)
+        assignment = db.scalars(
+            select(TeacherAssignment).where(
+                TeacherAssignment.teacher_id == teacher_id,
+                TeacherAssignment.section_id == student.section_id,
+            )
+        ).first()
+        if assignment is None:
+            pytest.skip("teacher is not a subject teacher in the student's section")
+        other_subject = db.scalars(
+            select(Subject.id).where(
+                Subject.tenant_id == student.tenant_id,
+                Subject.id != assignment.subject_id,
+            )
+        ).first()
+        if other_subject is None:
+            pytest.skip("no alternate subject to test")
+        response = teacher_context["client"].post(
+            "/api/remarks",
+            json={
+                "student_id": student_id,
+                "body": "Subject pairing should be enforced.",
+                "category": "academic",
+                "subject_id": other_subject,
+            },
+        )
+        assert response.status_code == 404
+
     def test_teacher_cannot_attach_another_tenants_term(self, teacher_context, db):
         from sqlalchemy import select
 

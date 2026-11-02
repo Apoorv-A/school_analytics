@@ -17,7 +17,7 @@ from datetime import date, timedelta
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.db import Base, SessionLocal, engine, init_db
+from app.db import SessionLocal, init_db, reset_dev_schema
 from app.models import (
     AcademicYear,
     Assessment,
@@ -62,8 +62,10 @@ TENANT_SETTINGS = {
         "remarks": True,
         "parentPortal": True,
         "studentPortal": True,
+        "bulkImport": False,
+        "interventions": False,
     },
-    "auth": {"mfaRequiredRoles": ["admin", "teacher"], "sessionMaxAge": 28800},
+    "auth": {"mfaEnabled": False, "mfaRequiredRoles": [], "sessionMaxAge": 28800},
 }
 
 SCHOOL_NAME = "Sunrise Public School"
@@ -235,8 +237,7 @@ def _school_days(start: date, end: date) -> list[date]:
 
 
 def reset_database() -> None:
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
+    reset_dev_schema()
 
 
 def _wipe_rows(db: Session) -> None:

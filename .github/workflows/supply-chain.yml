@@ -1,0 +1,66 @@
+name: supply-chain
+
+on:
+  pull_request:
+    paths:
+      - "requirements.txt"
+      - "requirements.lock"
+      - ".github/workflows/supply-chain.yml"
+  push:
+    branches: [main]
+    paths:
+      - "requirements.txt"
+      - "requirements.lock"
+      - ".github/workflows/supply-chain.yml"
+  schedule:
+    # Weekly vulnerability scan (Monday 06:00 UTC).
+    - cron: "0 6 * * 1"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install locked dependencies
+        run: pip install -r requirements.lock
+
+      - name: pip audit
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.lock --desc on
+
+      - name: Verify lock file is current
+        run: |
+          pip install pip-tools
+          pip-compile --quiet --dry-run --output-file=requirements.lock requirements.txt
+          git diff --exit-code requirements.lock
+
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          pip install cyclonedx-bom
+          cyclonedx-py requirements \
+            --output-format JSON \
+            --output-file sbom.json \
+            requirements.lock
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-sbom
+          path: sbom.json
+          retention-days: 90
+
+      - name: pip freeze snapshot
+        run: pip freeze > pip-freeze.txt
+
+      - name: Upload pip freeze artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-freeze
+          path: pip-freeze.txt
+          retention-days: 90

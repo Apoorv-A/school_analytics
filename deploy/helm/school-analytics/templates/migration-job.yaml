@@ -1,0 +1,71 @@
+{{- if .Values.migrations.enabled }}
+{{- if not .Values.image.tag }}
+{{- fail "image.tag must be set to an explicit version at deploy time" }}
+{{- end }}
+{{- if eq .Values.image.tag "latest" }}
+{{- fail "image.tag must not be 'latest'; pin a released semver" }}
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-migrate
+  labels:
+    app: {{ .Release.Name }}
+    component: migrate
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.migrations.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+        component: migrate
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      {{- if .Values.tmpVolume.enabled }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            {{- if .Values.tmpVolume.sizeLimit }}
+            sizeLimit: {{ .Values.tmpVolume.sizeLimit }}
+            {{- end }}
+      {{- end }}
+      containers:
+        - name: migrate
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["alembic", "upgrade", "head"]
+          {{- if .Values.tmpVolume.enabled }}
+          volumeMounts:
+            - name: tmp
+              mountPath: {{ .Values.tmpVolume.mountPath }}
+          {{- end }}
+          env:
+            - name: TMPDIR
+              value: {{ .Values.tmpVolume.mountPath | quote }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: {{ .Values.migrations.databaseUrlSecretKey }}
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: secret-key
+          resources:
+            {{- toYaml .Values.migrations.resources | nindent 12 }}
+{{- end }}

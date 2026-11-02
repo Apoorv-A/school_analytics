@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.analytics.queries import filter_options
 from app.db import get_db
 from app.deps import AccessScope, get_access_scope, require_roles
-from app.models import Role, Student
-from app.portals import render_dashboard, student_subtitle
+from app.models import Role, School, Student
+from app.portals import PORTAL_HOME, portal_nav, render_dashboard, student_subtitle
 from app.routers.student_views import staff_student_overview_cards
 from app.schemas import FilterParams, filter_params
+from app.templating import templates
+from app.tenant.context import require_tenant_context
+from app.tenant.features import require_interventions_enabled
 
 router = APIRouter(
     prefix="/teacher",
@@ -229,6 +233,40 @@ def student_detail(
         # This page is about the student in the URL, and deliberately offers no
         # student control, so the charts have to be told which one.
         pinned=["student_id"],
+    )
+
+
+@router.get("/interventions")
+def interventions_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
+    filters: FilterParams = Depends(filter_params),
+) -> Response:
+    require_interventions_enabled()
+    section_id = scope.resolve_section_id(filters.section_id)
+    filters = filters.with_section(section_id)
+    school = db.scalars(
+        select(School).where(School.tenant_id == scope.tenant_id).limit(1)
+    ).first()
+    return templates.TemplateResponse(
+        request,
+        "interventions.html",
+        {
+            "page_title": "Interventions",
+            "page_subtitle": "Follow up with at-risk students in your classes",
+            "active_nav": "/teacher/interventions",
+            "current_user": scope.user,
+            "school": school,
+            "nav_groups": portal_nav(scope.role, require_tenant_context().settings),
+            "portal_home": PORTAL_HOME[scope.role],
+            "visible_filters": CLASSROOM_FILTERS,
+            "rendered_filters": [],
+            "pinned_filters": {"section_id": str(section_id)},
+            "filters": filters,
+            "filter_options": filter_options(db, scope),
+            "at_risk_chart_key": "section.at_risk",
+        },
     )
 
 

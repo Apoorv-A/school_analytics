@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 from collections.abc import Generator
 
@@ -57,7 +58,7 @@ def _apply_sqlite_pragmas(cursor: sqlite3.Cursor) -> None:
 
 if _is_sqlite:
 
-    @event.listens_for(Engine, "connect")
+    @event.listens_for(engine, "connect")
     def _set_sqlite_pragmas(dbapi_connection, connection_record) -> None:
         cursor = dbapi_connection.cursor()
         try:
@@ -90,18 +91,44 @@ def _run_sqlite_migrations() -> None:
     command.upgrade(alembic_cfg, "head")
 
 
-def init_db() -> None:
-    """Create any missing tables. Model modules must be imported first."""
-    from app import models  # noqa: F401  (registers mappers on Base.metadata)
-    from app.tenant.rls import apply_rls_policies, configure_rls
+def reset_dev_schema() -> None:
+    """Drop ORM tables and Alembic stamp, then re-apply migrations (SQLite dev/seed)."""
+    from app import models  # noqa: F401
 
-    configure_rls(engine)
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.drop_all(bind=engine)
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
     if _is_sqlite:
         _run_sqlite_migrations()
-    elif _is_postgres:
-        with engine.begin() as connection:
-            apply_rls_policies(connection)
+
+
+def startup_ddl_enabled() -> bool:
+    """Whether ``init_db`` may apply schema migrations on SQLite.
+
+    PostgreSQL and other production targets must be migrated with
+    ``alembic upgrade head`` before the app starts. ``init_db`` still attaches
+    runtime RLS session hooks on Postgres but does not create tables or policies.
+    Set ``SKIP_STARTUP_DDL=1`` to skip Alembic on SQLite (e.g. tests that
+    manage migrations explicitly).
+    """
+    explicit = os.environ.get("SKIP_STARTUP_DDL", "").strip().lower()
+    if explicit in {"1", "true", "yes"}:
+        return False
+    if _is_postgres:
+        return False
+    return True
+
+
+def init_db() -> None:
+    """Prepare the database for runtime. Model modules must be imported first."""
+    from app import models  # noqa: F401  (registers mappers on Base.metadata)
+    from app.tenant.rls import configure_rls
+
+    configure_rls(engine)
+    if not startup_ddl_enabled():
+        return
+    if _is_sqlite:
+        _run_sqlite_migrations()
 
 
 def check_db_connection() -> bool:
@@ -111,3 +138,38 @@ def check_db_connection() -> bool:
         return True
     except Exception:
         return False
+
+
+def _alembic_script_directory():
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    cfg = Config(str(PROJECT_ROOT / "alembic.ini"))
+    return ScriptDirectory.from_config(cfg)
+
+
+def check_db_migrations_at_head(conn_engine: Engine | None = None) -> bool:
+    """Return True when the database revision matches an Alembic head."""
+    from alembic.runtime.migration import MigrationContext
+
+    heads = set(_alembic_script_directory().get_heads())
+    if not heads:
+        return False
+
+    db_engine = conn_engine or engine
+    try:
+        with db_engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            current = context.get_current_revision()
+    except Exception:
+        return False
+
+    return current is not None and current in heads
+
+
+def db_readiness() -> dict[str, str]:
+    """Database connectivity and migration revision state for ``/readyz``."""
+    if not check_db_connection():
+        return {"database": "unavailable", "migrations": "unavailable"}
+    migrations = "ok" if check_db_migrations_at_head() else "pending"
+    return {"database": "ok", "migrations": migrations}

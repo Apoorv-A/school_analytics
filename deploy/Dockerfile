@@ -8,8 +8,8 @@ WORKDIR /app
 
 RUN addgroup --system app && adduser --system --ingroup app app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt alembic pyyaml
+COPY requirements.lock .
+RUN pip install --no-cache-dir -r requirements.lock
 
 COPY app app/
 COPY tenant_config tenant_config/

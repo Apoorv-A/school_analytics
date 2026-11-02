@@ -29,7 +29,7 @@
         const body = new FormData();
         body.append("file", file);
         report.textContent = "Working…";
-        fetch(endpoint, { method: "POST", body: body, credentials: "same-origin" })
+        fetch(endpoint, { method: "POST", body: body, credentials: "same-origin", headers: csrfHeaders() })
           .then(function (r) { return r.json(); })
           .then(function (data) {
             report.textContent = JSON.stringify(data, null, 2);

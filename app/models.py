@@ -272,6 +272,13 @@ class User(Base):
     role: Mapped[Role] = mapped_column(Enum(Role, native_enum=False), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(32))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    totp_secret_enc: Mapped[str | None] = mapped_column(String(512))
+    totp_pending_secret_enc: Mapped[str | None] = mapped_column(String(512))
+    mfa_enrolled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    session_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -282,6 +289,62 @@ class User(Base):
     children: Mapped[list[Student]] = relationship(
         back_populates="guardian", foreign_keys="Student.guardian_user_id"
     )
+    mfa_recovery_codes: Mapped[list[UserMfaRecoveryCode]] = relationship(
+        back_populates="user",
+        foreign_keys="UserMfaRecoveryCode.user_id",
+        cascade="all, delete-orphan",
+    )
+
+
+class UserMfaRecoveryCode(Base):
+    """Single-use MFA recovery code (stored as SHA-256 hash)."""
+
+    __tablename__ = "user_mfa_recovery_codes"
+    __table_args__ = (
+        UniqueConstraint("user_id", "code_hash", name="uq_user_mfa_recovery_code_hash"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+
+    user: Mapped[User] = relationship(
+        foreign_keys=[user_id], back_populates="mfa_recovery_codes"
+    )
+
+
+class PasswordResetToken(Base):
+    """Single-use, expiring password reset token (stored as SHA-256 hash)."""
+
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+
+    user: Mapped[User] = relationship(foreign_keys=[user_id])
 
 
 class Teacher(Base):
@@ -522,10 +585,316 @@ class Remark(Base):
     subject: Mapped[Subject | None] = relationship()
 
 
+class InterventionStatus(enum.StrEnum):
+    OPEN = "open"
+    IN_PROGRESS = "in_progress"
+    RESOLVED = "resolved"
+
+    @property
+    def label(self) -> str:
+        return {
+            InterventionStatus.OPEN: "Open",
+            InterventionStatus.IN_PROGRESS: "In progress",
+            InterventionStatus.RESOLVED: "Resolved",
+        }[self]
+
+
+class InterventionPriority(enum.StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+    @property
+    def label(self) -> str:
+        return self.value.capitalize()
+
+
+class InterventionEventType(enum.StrEnum):
+    CASE_CREATED = "case_created"
+    OWNER_CHANGED = "owner_changed"
+    PRIORITY_CHANGED = "priority_changed"
+    TASK_CREATED = "task_created"
+    TASK_COMPLETED = "task_completed"
+    GUARDIAN_CONTACTED = "guardian_contacted"
+    STATUS_CHANGED = "status_changed"
+    OUTCOME_RECORDED = "outcome_recorded"
+    ESCALATION_TRIGGERED = "escalation_triggered"
+    CASE_CLOSED = "case_closed"
+
+
+class ActionTaskStatus(enum.StrEnum):
+    OPEN = "open"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+    @property
+    def label(self) -> str:
+        return {
+            ActionTaskStatus.OPEN: "Open",
+            ActionTaskStatus.IN_PROGRESS: "In progress",
+            ActionTaskStatus.COMPLETED: "Completed",
+            ActionTaskStatus.CANCELLED: "Cancelled",
+        }[self]
+
+
+class ActionTaskVisibility(enum.StrEnum):
+    STAFF = "staff"
+    ASSIGNEE_ONLY = "assignee_only"
+
+    @property
+    def label(self) -> str:
+        return {
+            ActionTaskVisibility.STAFF: "All case staff",
+            ActionTaskVisibility.ASSIGNEE_ONLY: "Assignee only",
+        }[self]
+
+
+class InterventionContactType(enum.StrEnum):
+    PHONE = "phone"
+    EMAIL = "email"
+    IN_PERSON = "in_person"
+    OTHER = "other"
+
+    @property
+    def label(self) -> str:
+        return {
+            InterventionContactType.PHONE: "Phone",
+            InterventionContactType.EMAIL: "Email",
+            InterventionContactType.IN_PERSON: "In person",
+            InterventionContactType.OTHER: "Other",
+        }[self]
+
+
 class ImportRunStatus(enum.StrEnum):
     VALIDATED = "validated"
     APPLIED = "applied"
     FAILED = "failed"
+
+
+class ImportMappingQueueStatus(enum.StrEnum):
+    PENDING = "pending"
+    MAPPED = "mapped"
+    REJECTED = "rejected"
+
+
+class InterventionCase(Base):
+    """Actionable follow-up for an at-risk student."""
+
+    __tablename__ = "intervention_cases"
+    __table_args__ = (
+        Index("ix_intervention_cases_tenant_status", "tenant_id", "status"),
+        Index("ix_intervention_cases_student", "tenant_id", "student_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    student_id: Mapped[int] = mapped_column(
+        ForeignKey("students.id", ondelete="CASCADE"), index=True
+    )
+    signal_source: Mapped[str] = mapped_column(String(80), nullable=False)
+    reason_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    priority: Mapped[InterventionPriority] = mapped_column(
+        Enum(InterventionPriority, native_enum=False), nullable=False
+    )
+    status: Mapped[InterventionStatus] = mapped_column(
+        Enum(InterventionStatus, native_enum=False),
+        nullable=False,
+        default=InterventionStatus.OPEN,
+    )
+    owner_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    due_date: Mapped[date | None] = mapped_column(Date)
+    notes_summary: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+
+    student: Mapped[Student] = relationship()
+    owner: Mapped[User | None] = relationship(foreign_keys=[owner_user_id])
+    contacts: Mapped[list[InterventionContact]] = relationship(
+        back_populates="case",
+        cascade="all, delete-orphan",
+        order_by="InterventionContact.contacted_at.desc()",
+    )
+    events: Mapped[list[InterventionEvent]] = relationship(
+        back_populates="case",
+        cascade="all, delete-orphan",
+        order_by="InterventionEvent.created_at.asc()",
+    )
+    tasks: Mapped[list[ActionTask]] = relationship(
+        back_populates="case",
+        cascade="all, delete-orphan",
+        order_by="ActionTask.created_at.asc()",
+    )
+
+
+class InterventionEvent(Base):
+    """Append-only timeline entry for an intervention case."""
+
+    __tablename__ = "intervention_events"
+    __table_args__ = (
+        Index(
+            "ix_intervention_events_case_created",
+            "tenant_id",
+            "intervention_case_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    intervention_case_id: Mapped[int] = mapped_column(
+        ForeignKey("intervention_cases.id", ondelete="CASCADE"), index=True
+    )
+    event_type: Mapped[InterventionEventType] = mapped_column(
+        Enum(InterventionEventType, native_enum=False), nullable=False, index=True
+    )
+    actor_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    event_metadata: Mapped[dict | None] = mapped_column("metadata", JSON)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )
+
+    case: Mapped[InterventionCase] = relationship(back_populates="events")
+
+
+class InterventionContact(Base):
+    """A contact attempt logged against an intervention case."""
+
+    __tablename__ = "intervention_contacts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    case_id: Mapped[int] = mapped_column(
+        ForeignKey("intervention_cases.id", ondelete="CASCADE"), index=True
+    )
+    contact_type: Mapped[InterventionContactType] = mapped_column(
+        Enum(InterventionContactType, native_enum=False), nullable=False
+    )
+    notes: Mapped[str] = mapped_column(Text, nullable=False)
+    contacted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    case: Mapped[InterventionCase] = relationship(back_populates="contacts")
+
+
+class ActionTask(Base):
+    """Follow-up action item linked to an intervention case."""
+
+    __tablename__ = "action_tasks"
+    __table_args__ = (
+        Index(
+            "ix_action_tasks_case_status",
+            "tenant_id",
+            "intervention_case_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    intervention_case_id: Mapped[int] = mapped_column(
+        ForeignKey("intervention_cases.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    assigned_to_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    visibility: Mapped[ActionTaskVisibility] = mapped_column(
+        Enum(ActionTaskVisibility, native_enum=False),
+        nullable=False,
+        default=ActionTaskVisibility.STAFF,
+    )
+    status: Mapped[ActionTaskStatus] = mapped_column(
+        Enum(ActionTaskStatus, native_enum=False),
+        nullable=False,
+        default=ActionTaskStatus.OPEN,
+    )
+    priority: Mapped[InterventionPriority] = mapped_column(
+        Enum(InterventionPriority, native_enum=False), nullable=False
+    )
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completion_note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    case: Mapped[InterventionCase] = relationship(back_populates="tasks")
+    assigned_to: Mapped[User | None] = relationship(foreign_keys=[assigned_to_user_id])
+    created_by: Mapped[User | None] = relationship(foreign_keys=[created_by_user_id])
+
+
+class ImportMappingQueue(Base):
+    """Staging queue for external assessment keys that need explicit admin mapping."""
+
+    __tablename__ = "import_mapping_queue"
+    __table_args__ = (
+        Index(
+            "ix_import_mapping_queue_tenant_status",
+            "tenant_id",
+            "status",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "external_key",
+            name="uq_import_mapping_pending_key",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    external_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_snippet: Mapped[dict | None] = mapped_column(JSON)
+    status: Mapped[ImportMappingQueueStatus] = mapped_column(
+        Enum(ImportMappingQueueStatus, native_enum=False),
+        nullable=False,
+        default=ImportMappingQueueStatus.PENDING,
+    )
+    mapped_assessment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("assessments.id", ondelete="SET NULL"), index=True
+    )
+    resolved_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    mapped_assessment: Mapped[Assessment | None] = relationship()
 
 
 class ImportRun(Base):
@@ -549,4 +918,73 @@ class ImportRun(Base):
     )
     created_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
+    )
+
+
+class ConsentPurpose(enum.StrEnum):
+    """Lawful processing purpose recorded for a minor's data (DPDP pilot)."""
+
+    STUDENT_ANALYTICS = "student_analytics"
+    DATA_PROCESSING = "data_processing"
+
+
+class ConsentStatus(enum.StrEnum):
+    GRANTED = "granted"
+    WITHDRAWN = "withdrawn"
+
+
+class ParentalConsentRecord(Base):
+    """Append-only parental consent event for a student and processing purpose."""
+
+    __tablename__ = "parental_consent_records"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    student_id: Mapped[int] = mapped_column(
+        ForeignKey("students.id", ondelete="CASCADE"), index=True
+    )
+    guardian_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    purpose: Mapped[ConsentPurpose] = mapped_column(
+        Enum(ConsentPurpose, native_enum=False), nullable=False
+    )
+    status: Mapped[ConsentStatus] = mapped_column(
+        Enum(ConsentStatus, native_enum=False), nullable=False
+    )
+    privacy_notice_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    dpa_reference: Mapped[str | None] = mapped_column(String(80))
+    notes: Mapped[str | None] = mapped_column(Text)
+    recorded_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=False
+    )
+
+    student: Mapped[Student] = relationship(foreign_keys=[student_id])
+    guardian: Mapped[User | None] = relationship(foreign_keys=[guardian_user_id])
+
+
+class SecurityAuditEvent(Base):
+    """Append-only audit trail for security-relevant identity and access actions."""
+
+    __tablename__ = "security_audit_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    actor_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    action: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_metadata: Mapped[dict | None] = mapped_column("metadata", JSON)
+    correlation_id: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
     )

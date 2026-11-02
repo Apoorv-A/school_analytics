@@ -2,6 +2,8 @@
 
 Use this document to onboard another AI agent, reviewer, or engineer. It is the single canonical context file for the **Python multi-tenant** implementation.
 
+**Authoritative audit handoff (P0 gates, invariants, backlog):** The September 2026 engineering audit handoff (`school_platform_ai_handoff.md`) is the release-sequencing source of truth. Do not begin post-P0 feature work until P0 exit criteria in that document are satisfied. This file documents the current codebase; when they conflict on sequencing or security invariants, follow the audit handoff.
+
 **Path:** `docs/AI_HANDOFF.md` in the [school_analytics](https://github.com/Apoorv-A/school_analytics) code repository.
 
 ---
@@ -53,9 +55,12 @@ Multi-tenant school analytics SaaS: one shared FastAPI deployment per environmen
 | `app/tenant/context.py` | Request-scoped tenant context (ContextVar) |
 | `app/tenant/settings.py` | Per-tenant thresholds and feature flags from `tenants.settings_json` |
 | `app/tenant/rls.py` | Postgres RLS setup (data tables only) |
-| `app/tenant/features.py` | Feature flag guards (exports, portals, remarks, bulkImport) |
+| `app/tenant/features.py` | Feature flag guards (exports, portals, remarks, bulkImport, interventions) |
+| `app/tenant/policy.py` | Tenant policy guards (family comparison mode, attendance counting, cohort chart gating) |
+| `app/routers/interventions.py` | Intervention case workflow API + admin UI when `features.interventions` is enabled |
 | `app/import_/` | CSV validate/apply CLI (`python -m app.import_.cli validate|apply`) — underscore because `import` is reserved |
 | `app/import_/history.py` | Import run audit log (`import_runs` table) |
+| `app/audit.py` | Append-only security audit events (`security_audit_events` table) |
 | `app/routers/students.py` | Admin student search (`GET /api/students/search`) |
 | `app/routers/remarks.py` | Teacher remark POST (`POST /api/remarks`) |
 | `app/db.py` | SQLAlchemy engine; SQLite `NullPool` locally, pooled Postgres in production |
@@ -157,7 +162,8 @@ Environment image versions live in `environments/<env>/release.yaml`, not per-te
 
 ## Security invariants (do not break)
 
-- Out-of-scope IDs return **404**, not 403.
+- Out-of-scope IDs and charts a role may not see return **404**, not 403 (config-repo QA regression enforces this for charts).
+- Portal routes use **403** when the signed-in role opens another role's HTML portal — that is intentional.
 - Parent `cohort_view()` is aggregate-only; never return classmate names to parents.
 - Login throttle key includes **`tenant_id`** — lockout is per school, not global per email.
 - Never put secrets in tenant YAML; K8s secret references only.
@@ -187,7 +193,7 @@ New users from `users.csv` get unique temporary passwords returned in the apply 
 
 ## Tests
 
-~300 tests including tenant isolation, authz, charts, insights, and import validation.
+~320 tests including tenant isolation, authz, charts, insights, import validation, interventions, policy, and QA contract tests (`tests/test_qa_contract.py`).
 
 Always pass `Host: sunrise.localhost` (or `horizon.localhost`) in API tests — see `tests/conftest.py` `DEFAULT_HEADERS`.
 
@@ -201,7 +207,11 @@ Always pass `Host: sunrise.localhost` (or `horizon.localhost`) in API tests — 
 | `deploy/docker-compose.yml` | Local Postgres + app |
 | `deploy/helm/school-analytics/` | Shared K8s release |
 | `.github/workflows/preflight.yml` | CI: ruff, pytest, docs drift, helm lint |
+| `.github/workflows/supply-chain.yml` | CI: pip-audit, lock drift, CycloneDX SBOM |
 | `.github/workflows/release.yml` | Image publish on `v*` tag |
+| `requirements.lock` | Pinned transitive deps (`pip-compile`); used in Docker + CI |
+| `docs/operations/supply-chain.md` | Dependency locking, vulnerability scan, SBOM |
+| `docs/operations/production-support-matrix.md` | Supported versions, MFA, RPO/RTO, exclusions |
 
 ---
 
@@ -227,7 +237,98 @@ PYTHONPATH=. pytest -q
 PYTHONPATH=. python scripts/docs_verify.py
 ```
 
-**Last updated:** 2026-09-10 (Phase 2: import fixes, parent insight summary, ERP webhook).
+**Last updated:** 2026-09-15 (P0 supply chain + production support matrix + Helm read-only root FS).
+
+---
+
+## P0 §12.1 checklist (audit handoff)
+
+Tracked against authoritative `school_platform_ai_handoff.md` §12.1. **Do not begin new post-P0 feature work until all items marked Pass** (or product owner explicitly waives a Partial).
+
+| # | Requirement | Status |
+| --- | --- | --- |
+| 1 | Attendance-to-term derivation + backfill | **Pass** |
+| 2 | Reject marks outside bounds / absent-state rules | **Pass** |
+| 3 | Real baseline migration | **Pass** |
+| 4 | Remove production startup DDL; migration job | **Pass** |
+| 5 | PostgreSQL migration + RLS integration tests | **Pass** (`postgres-integration.yml`) |
+| 6 | MFA enforced for privileged roles | **Pass** |
+| 7 | Tenant-operator DB binding + cross-DB tests | **Pass** |
+| 8 | ERP webhook secret, signing, replay protection | **Pass** |
+| 9 | Unified app/config schema + release contract | **Pass** — `tenant_config/models.py` ↔ `tenant.schema.json`; `webhookSecretRef` not `webhookToken`; prod admin MFA enforced in schema + operator |
+| 10 | Live regression tests match auth behavior | **Pass** — `tests/test_qa_contract.py` mirrors `qa/regression.py` (`ROLE_FORBIDDEN_CHART`, `/api/auth/login`, `/healthz`, `/readyz`) |
+| 11 | Exact section+subject remark authorization | **Pass** |
+| 12 | Secure cookies + stable `SECRET_KEY` in production | **Pass** |
+| 13 | CSRF + POST-only logout | **Pass** |
+| 14 | Shared login throttling + trusted-proxy config | **Pass** — `RedisLoginThrottleStore` when `LOGIN_THROTTLE_BACKEND=redis`; `TrustedProxyMiddleware` + `TRUSTED_PROXY` |
+| 15 | Invitation, forced password change, reset, recovery | **Pass** — `POST /api/admin/users/invite` (temp password + activation token, `must_change_password`); reset + forced change done |
+| 16 | Security + data-access audit events | **Pass** — CSV export, bulk import apply, sensitive chart access audited |
+| 17 | Separate readiness/liveness; fail on DB error | **Pass** |
+| 18 | Define and validate deployment secrets | **Pass** — `scripts/validate_deploy_secrets.py` checks `database-url`, `database-migrate-url`, `secret-key` |
+| 19 | Backup, restore, recovery tests | **Pass** |
+| 20 | Fix or remove dead platform settings route | **Pass** (`/admin/platform`) |
+| 21 | Feature flags control navigation consistently | **Pass** (`app/portals.py`) |
+| 22 | Lock dependencies + vulnerability/SBOM controls | **Pass** — `requirements.lock`, `supply-chain.yml`, `docs/operations/supply-chain.md` |
+| 23 | Remove/pin `latest` from release workflows | **Pass** |
+| 24 | Kubernetes security context + hardening | **Pass** — `runAsNonRoot`, dropped caps, seccomp, `readOnlyRootFilesystem` + `/tmp` emptyDir, optional PDB |
+| 25 | Production support matrix + runbook | **Pass** — `docs/operations/production-support-matrix.md`, `backup-restore.md` |
+
+**Post-P0 gate:** All §12.1 items **Pass**. Per handoff §41 step 24, **`InterventionCase` new work is cleared** for teams treating strict P0 exit literally.
+
+---
+
+## P0-C progress (audit handoff §26.3)
+
+Tracked against the authoritative `school_platform_ai_handoff.md`; do not treat this as a replacement.
+
+| Item | Status |
+| --- | --- |
+| TOTP MFA (privileged roles) | **Done** — enrol/verify, encrypted secrets, rate-limited verify |
+| CSRF on state-changing requests | **Done** |
+| Password reset (admin + self-service token) | **Done** — `password_reset_tokens`, single-use + expiry, rate-limited forgot |
+| Session revocation (`session_version` in cookie) | **Done** — bumped on password change/reset; stale cookies rejected |
+| Forced first-password change (`must_change_password`) | **Done** — set on CSV import; middleware blocks portal/API until changed |
+| Login throttling (shared backend) | **Done** — `RedisLoginThrottleStore` + `TRUSTED_PROXY` / `TrustedProxyMiddleware` |
+| Invite/activation token | **Done** — `POST /api/admin/users/invite` |
+| MFA recovery codes / re-enrollment states | **Done** — hashed one-time codes; `POST /api/auth/mfa/recovery-codes` (re-auth); `POST /api/auth/mfa/recovery` and `POST /login/mfa/recovery`; admin reset at `POST /api/admin/users/{id}/mfa/reset` with session revoke + audit |
+| Session/device list UI | **Not started** |
+| SSO / verified contact workflows | **Not started** |
+
+Alembic head: `009_security_audit_events` (account lifecycle in `008`).
+
+### P0 auditability (handoff §24.4)
+
+| Item | Status |
+| --- | --- |
+| `security_audit_events` table + tenant RLS | **Done** — Alembic `009_security_audit_events` |
+| `record_security_event()` helper | **Done** — `app/audit.py`; metadata sanitized (no passwords/tokens) |
+| Login success/failure, logout, password reset, MFA verify | **Done** — wired in `app/routers/auth.py` |
+| Admin password-reset API audit | **Done** |
+| Session revocation bump metadata | **Done** — `session.revoked` in `set_user_password()` |
+| Data-access audit events (imports, exports, chart access) | **Done** — export CSV, import apply, sensitive charts |
+| Audit explorer UI | **Not started** (P1) |
+
+---
+
+## Authentication
+
+- **Browser:** `GET/POST /login` — form-based sign-in. When tenant MFA applies, password success shows a second step for the TOTP code (or enrolment when required and not yet set up).
+- **Automation / QA:** `POST /api/auth/login` with JSON `{"email","password"}` — response includes `userId`, `role`, `mfaPending`, `mfaEnrolmentNeeded`, and when applicable `mfaToken` or `enrolmentToken`. Complete MFA with `POST /api/auth/mfa/verify` (`{"code","mfaToken"}`). Enrol with `POST /api/auth/mfa/enroll/start` and `POST /api/auth/mfa/enroll/confirm`.
+- **MFA:** TOTP (RFC 6238) via `pyotp`. Secrets are Fernet-encrypted at rest using a key derived from `SECRET_KEY`. Tenant `auth.mfaEnabled` plus `auth.mfaRequiredRoles` gate which roles must enrol and verify on each sign-in. Short-lived signed cookies/tokens (`sa_mfa_pending`, `sa_mfa_enrol`, 5 min) bridge password success to MFA verify/enrol; full session cookie is issued only after TOTP passes. MFA verify attempts are rate-limited like password login. QA regression still treats unexpected `mfaPending: true` as failure on tenants that have MFA disabled.
+- **Password reset:** `GET/POST /forgot-password` (generic response, rate-limited); `GET/POST /reset-password?token=…` (single-use SHA-256 hashed tokens in `password_reset_tokens`, default 1 h TTL). Admin: `POST /api/admin/users/{user_id}/password-reset` returns `resetToken` once (no email delivery in v1).
+- **Forced password change:** `users.must_change_password` set on CSV import temp passwords; middleware redirects to `GET/POST /change-password` until cleared. Session cookie includes `sv` (`session_version`); password change/reset increments it and invalidates older cookies. Login throttle: `app/throttle.py` (`LOGIN_THROTTLE_BACKEND=memory` default; `redis` when `LOGIN_THROTTLE_REDIS_URL` set). Trusted proxy: `TRUSTED_PROXY=true` enables `X-Forwarded-For` via `TrustedProxyMiddleware`.
+- **Admin invite:** `POST /api/admin/users/invite` creates a user with a one-time `tempPassword`, `activationToken` (password-reset flow), and `must_change_password=true`.
+
+---
+
+## Health probes
+
+| Path | Purpose |
+| --- | --- |
+| `/healthz` | **Liveness** — process up; no dependency checks. K8s liveness + Docker `HEALTHCHECK`. |
+| `/readyz` | **Readiness** — verifies database connectivity and that Alembic is at head; returns 503 when DB is unavailable or migrations are pending. K8s readiness probe. Response includes `database` and `migrations` (`ok` / `pending` / `unavailable`). |
+
+Both paths bypass tenant hostname resolution (`TenantMiddleware` exempt list).
 
 ---
 
@@ -242,7 +343,9 @@ Scope and roadmap: [docs/product/phase2.md](product/phase2.md) and [docs/product
 - Admin filter bar: student **combobox** (focus opens roster browse via `GET /api/students/search?q=`, typing filters); **subject** and **class** are single-select dropdowns (`subject_id`, `section_id`).
 - **Import apply** — `school_structure.csv` (grades/sections/subjects), score upsert by `assessment_code` → `assessments.external_id`, extract-error guards, 5 MB per-file / 25 MB bundle / 50 MB zip decompressed caps, temp dir cleanup.
 - **Parent-safe insights** — `student.insight_summary` chart on parent/student overview (no class averages or staff actions); admin keeps `student.insights`.
-- **ERP webhook** — `POST /api/erp/import` with `Authorization: Bearer <token>` when `bulkImport` is enabled. Each tenant must store its own secret in `settings_json.erp.webhookToken`; missing/empty tenant secret always returns 401 (no global env fallback).
+- **ERP webhook** — `POST /api/erp/import` with HMAC-signed requests when `bulkImport` is enabled. Tenant config stores only `erp.webhookSecretRef` (and optional `erp.webhookSigningSecretRef`); runtime resolves `SA_SECRET_<REF>` from deployment secrets. Missing ref or unresolved secret fails closed (401 at request time; startup abort in production).
+- **Intervention workflow** — `intervention_cases` / `intervention_contacts` tables, admin UI at `/admin/interventions`, API at `/api/interventions` when `features.interventions` is enabled.
+- **Policy layer** — `app/tenant/policy.py` applies `portal.familyComparisonMode` and attendance counting rules from tenant settings.
 
 **Up next:** Scheduled SFTP/REST connectors, delta sync, conflict resolution UI.
 

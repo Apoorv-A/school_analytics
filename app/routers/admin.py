@@ -13,19 +13,26 @@ from fastapi import (
     UploadFile,
     status,
 )
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.analytics.queries import filter_options
 from app.db import get_db
 from app.deps import AccessScope, get_access_scope, require_roles
-from app.models import Role, Student
-from app.portals import render_dashboard, student_subtitle
+from app.models import Role, School, Student
+from app.portals import PORTAL_HOME, portal_nav, render_dashboard, student_subtitle
 from app.routers.student_views import (
     STUDENT_PAGES,
     staff_student_overview_cards,
 )
 from app.schemas import FilterParams, filter_params
 from app.templating import templates
-from app.tenant.features import require_bulk_import_enabled
+from app.tenant.context import require_tenant_context
+from app.tenant.features import (
+    require_bulk_import_enabled,
+    require_interventions_enabled,
+    require_remarks_enabled,
+)
 
 router = APIRouter(
     prefix="/admin",
@@ -234,8 +241,13 @@ def _render(
     if page_key == "import":
         require_bulk_import_enabled()
         from app.import_.history import recent_import_runs
+        from app.import_.mapping_queue import list_mapping_queue
+        from app.models import ImportMappingQueueStatus
 
         runs = recent_import_runs(db, scope.tenant_id)
+        pending_mappings = list_mapping_queue(
+            db, scope.tenant_id, status=ImportMappingQueueStatus.PENDING
+        )
         return templates.TemplateResponse(
             request,
             page.get("template", "import.html"),
@@ -245,6 +257,7 @@ def _render(
                 "active_nav": "/admin/import",
                 "current_user": scope.user,
                 "import_runs": runs,
+                "pending_mappings": pending_mappings,
             },
         )
     return render_dashboard(
@@ -272,6 +285,28 @@ def _render_student_page(
     filters: FilterParams,
 ) -> Response:
     page = ADMIN_STUDENT_PAGES[page_key]
+    tenant_settings = require_tenant_context().settings
+    student_nav = [
+        {
+            "href": f"/admin/student/{student.id}",
+            "label": "Overview",
+            "current": page_key == "overview",
+        },
+        {
+            "href": f"/admin/student/{student.id}/insights",
+            "label": "Insights",
+            "current": page_key == "insights",
+        },
+    ]
+    if tenant_settings.remarks_enabled:
+        student_nav.insert(
+            1,
+            {
+                "href": f"/admin/student/{student.id}/remarks",
+                "label": "Remarks",
+                "current": page_key == "remarks",
+            },
+        )
     return render_dashboard(
         request,
         db,
@@ -283,25 +318,7 @@ def _render_student_page(
         visible_filters=page["filters"],
         cards=page["cards"],
         pinned=["student_id"],
-        extra={
-            "student_nav": [
-                {
-                    "href": f"/admin/student/{student.id}",
-                    "label": "Overview",
-                    "current": page_key == "overview",
-                },
-                {
-                    "href": f"/admin/student/{student.id}/remarks",
-                    "label": "Remarks",
-                    "current": page_key == "remarks",
-                },
-                {
-                    "href": f"/admin/student/{student.id}/insights",
-                    "label": "Insights",
-                    "current": page_key == "insights",
-                },
-            ],
-        },
+        extra={"student_nav": student_nav},
     )
 
 
@@ -363,6 +380,7 @@ def student_remarks(
             status_code=status.HTTP_404_NOT_FOUND, detail="Student not found."
         )
     scope.assert_tenant_record(student.tenant_id, "Student")
+    require_remarks_enabled()
     return _render_student_page(request, student, "remarks", db, scope, filters)
 
 
@@ -390,6 +408,38 @@ async def import_apply(
     return apply_uploads(db, scope.tenant_id, files, user_id=scope.user.id)
 
 
+@router.get("/interventions")
+def interventions_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
+    filters: FilterParams = Depends(filter_params),
+) -> Response:
+    require_interventions_enabled()
+    school = db.scalars(
+        select(School).where(School.tenant_id == scope.tenant_id).limit(1)
+    ).first()
+    return templates.TemplateResponse(
+        request,
+        "interventions.html",
+        {
+            "page_title": "Interventions",
+            "page_subtitle": "Turn at-risk signals into tracked follow-up cases",
+            "active_nav": "/admin/interventions",
+            "current_user": scope.user,
+            "school": school,
+            "nav_groups": portal_nav(scope.role, require_tenant_context().settings),
+            "portal_home": PORTAL_HOME[scope.role],
+            "visible_filters": SCHOOL_FILTERS,
+            "rendered_filters": [],
+            "pinned_filters": {},
+            "filters": filters,
+            "filter_options": filter_options(db, scope),
+            "at_risk_chart_key": "school.at_risk",
+        },
+    )
+
+
 @router.get("/{page_key}")
 def page(
     request: Request,
@@ -402,4 +452,6 @@ def page(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Page not found."
         )
+    if page_key == "import":
+        require_bulk_import_enabled()
     return _render(request, page_key, db, scope, filters)

@@ -18,7 +18,7 @@ from app.analytics import metrics, queries
 from app.deps import AccessScope
 from app.models import Role, Student
 from app.schemas import FilterParams
-from app.tenant.features import require_remarks_enabled
+from app.tenant.features import require_interventions_enabled, require_remarks_enabled
 
 ChartHandler = Callable[[Session, FilterParams, AccessScope], dict]
 
@@ -964,6 +964,49 @@ def school_attendance_scatter(
     }
 
 
+def _intervention_table(columns: list[dict[str, str]]) -> dict:
+    return {"kind": "table", "columns": columns, "rows": []}
+
+
+def staff_intervention_uncovered(
+    db: Session, filters: FilterParams, scope: AccessScope
+) -> dict:
+    require_interventions_enabled()
+    return _intervention_table(
+        [
+            {"key": "student", "label": "Student"},
+            {"key": "section", "label": "Class"},
+            {"key": "risk", "label": "Risk"},
+        ]
+    )
+
+
+def staff_interventions_open(
+    db: Session, filters: FilterParams, scope: AccessScope
+) -> dict:
+    require_interventions_enabled()
+    return _intervention_table(
+        [
+            {"key": "student", "label": "Student"},
+            {"key": "status", "label": "Status"},
+            {"key": "owner", "label": "Owner"},
+        ]
+    )
+
+
+def staff_intervention_outcomes(
+    db: Session, filters: FilterParams, scope: AccessScope
+) -> dict:
+    require_interventions_enabled()
+    return _intervention_table(
+        [
+            {"key": "student", "label": "Student"},
+            {"key": "outcome", "label": "Outcome"},
+            {"key": "closed", "label": "Closed", "align": "right"},
+        ]
+    )
+
+
 def school_teacher_effectiveness(
     db: Session, filters: FilterParams, scope: AccessScope
 ) -> dict:
@@ -1065,6 +1108,18 @@ CHART_DEFS: tuple[ChartDef, ...] = (
     ChartDef(
         "school.teacher_effectiveness", "Results by teacher", ADMIN_ONLY,
         school_teacher_effectiveness, "table",
+    ),
+    ChartDef(
+        "staff.intervention_uncovered", "Flagged pupils with no plan", STAFF,
+        staff_intervention_uncovered, "table",
+    ),
+    ChartDef(
+        "staff.interventions_open", "Open intervention cases", STAFF,
+        staff_interventions_open, "table",
+    ),
+    ChartDef(
+        "staff.intervention_outcomes", "Closed intervention outcomes", STAFF,
+        staff_intervention_outcomes, "table",
     ),
 )
 

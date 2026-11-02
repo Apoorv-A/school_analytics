@@ -388,11 +388,12 @@ def attendance_by_student(
         tally[student_id][key] = days
 
     result: dict[int, dict[str, float | int | None]] = {}
+    from app.tenant.policy import attendance_present_days
+
+    settings = metrics.active_settings()
     for student_id, counts in tally.items():
         total = sum(counts.values())
-        present = (
-            counts[AttendanceStatus.PRESENT.value] + counts[AttendanceStatus.LATE.value]
-        )
+        present = attendance_present_days(counts, settings)
         result[student_id] = {
             **counts,
             "total": total,
@@ -442,13 +443,14 @@ def attendance_monthly(
         key = status.value if isinstance(status, AttendanceStatus) else str(status)
         buckets[(int(year), int(month))][key] = count
 
+    from app.tenant.policy import attendance_present_days
+
+    settings = metrics.active_settings()
     rows: list[dict[str, object]] = []
     for year, month in sorted(buckets):
         counts = buckets[(year, month)]
         total = sum(counts.values())
-        present = (
-            counts[AttendanceStatus.PRESENT.value] + counts[AttendanceStatus.LATE.value]
-        )
+        present = attendance_present_days(counts, settings)
         rows.append(
             {
                 "label": f"{MONTH_LABELS[month - 1]} {year % 100:02d}",

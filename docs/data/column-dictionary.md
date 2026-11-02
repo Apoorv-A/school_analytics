@@ -14,6 +14,26 @@ Generated from SQLAlchemy models. Do not edit by hand.
 | `end_date` | DATE | no | — |
 | `is_current` | BOOLEAN | no | — |
 
+## `action_tasks`
+
+| Column | Type | Nullable | Notes |
+| --- | --- | --- | --- |
+| `id` | INTEGER | no | PK |
+| `tenant_id` | CHAR(32) | no | FK → tenants.id |
+| `intervention_case_id` | INTEGER | no | FK → intervention_cases.id |
+| `title` | VARCHAR(200) | no | — |
+| `description` | TEXT | yes | — |
+| `assigned_to_user_id` | INTEGER | yes | FK → users.id |
+| `created_by_user_id` | INTEGER | yes | FK → users.id |
+| `visibility` | VARCHAR(13) | no | — |
+| `status` | VARCHAR(11) | no | — |
+| `priority` | VARCHAR(6) | no | — |
+| `due_at` | DATETIME | yes | — |
+| `completed_at` | DATETIME | yes | — |
+| `completion_note` | TEXT | yes | — |
+| `created_at` | DATETIME | no | — |
+| `updated_at` | DATETIME | no | — |
+
 ## `assessments`
 
 | Column | Type | Nullable | Notes |
@@ -55,6 +75,22 @@ Generated from SQLAlchemy models. Do not edit by hand.
 | `name` | VARCHAR(60) | no | — |
 | `level` | INTEGER | no | — |
 
+## `import_mapping_queue`
+
+| Column | Type | Nullable | Notes |
+| --- | --- | --- | --- |
+| `id` | INTEGER | no | PK |
+| `tenant_id` | CHAR(32) | no | FK → tenants.id |
+| `source` | VARCHAR(40) | no | — |
+| `external_key` | VARCHAR(64) | no | — |
+| `payload_snippet` | JSON | yes | — |
+| `status` | VARCHAR(8) | no | — |
+| `mapped_assessment_id` | INTEGER | yes | FK → assessments.id |
+| `resolved_by_user_id` | INTEGER | yes | FK → users.id |
+| `resolved_at` | DATETIME | yes | — |
+| `created_at` | DATETIME | no | — |
+| `updated_at` | DATETIME | no | — |
+
 ## `import_runs`
 
 | Column | Type | Nullable | Notes |
@@ -66,6 +102,78 @@ Generated from SQLAlchemy models. Do not edit by hand.
 | `file_summary` | VARCHAR(255) | yes | — |
 | `row_counts` | JSON | yes | — |
 | `error_count` | INTEGER | no | — |
+| `created_at` | DATETIME | no | — |
+| `created_by_user_id` | INTEGER | yes | FK → users.id |
+
+## `intervention_cases`
+
+| Column | Type | Nullable | Notes |
+| --- | --- | --- | --- |
+| `id` | INTEGER | no | PK |
+| `tenant_id` | CHAR(32) | no | FK → tenants.id |
+| `student_id` | INTEGER | no | FK → students.id |
+| `signal_source` | VARCHAR(80) | no | — |
+| `reason_summary` | TEXT | no | — |
+| `priority` | VARCHAR(6) | no | — |
+| `status` | VARCHAR(11) | no | — |
+| `owner_user_id` | INTEGER | yes | FK → users.id |
+| `due_date` | DATE | yes | — |
+| `notes_summary` | TEXT | yes | — |
+| `created_at` | DATETIME | no | — |
+| `resolved_at` | DATETIME | yes | — |
+| `created_by_user_id` | INTEGER | yes | FK → users.id |
+
+## `intervention_contacts`
+
+| Column | Type | Nullable | Notes |
+| --- | --- | --- | --- |
+| `id` | INTEGER | no | PK |
+| `tenant_id` | CHAR(32) | no | FK → tenants.id |
+| `case_id` | INTEGER | no | FK → intervention_cases.id |
+| `contact_type` | VARCHAR(9) | no | — |
+| `notes` | TEXT | no | — |
+| `contacted_at` | DATETIME | no | — |
+| `created_by_user_id` | INTEGER | yes | FK → users.id |
+| `created_at` | DATETIME | no | — |
+
+## `intervention_events`
+
+| Column | Type | Nullable | Notes |
+| --- | --- | --- | --- |
+| `id` | INTEGER | no | PK |
+| `tenant_id` | CHAR(32) | no | FK → tenants.id |
+| `intervention_case_id` | INTEGER | no | FK → intervention_cases.id |
+| `event_type` | VARCHAR(20) | no | — |
+| `actor_user_id` | INTEGER | yes | FK → users.id |
+| `metadata` | JSON | yes | — |
+| `created_at` | DATETIME | no | — |
+
+## `parental_consent_records`
+
+| Column | Type | Nullable | Notes |
+| --- | --- | --- | --- |
+| `id` | INTEGER | no | PK |
+| `tenant_id` | CHAR(32) | no | FK → tenants.id |
+| `student_id` | INTEGER | no | FK → students.id |
+| `guardian_user_id` | INTEGER | yes | FK → users.id |
+| `purpose` | VARCHAR(17) | no | — |
+| `status` | VARCHAR(9) | no | — |
+| `privacy_notice_version` | VARCHAR(32) | no | — |
+| `dpa_reference` | VARCHAR(80) | yes | — |
+| `notes` | TEXT | yes | — |
+| `recorded_by_user_id` | INTEGER | yes | FK → users.id |
+| `recorded_at` | DATETIME | no | — |
+
+## `password_reset_tokens`
+
+| Column | Type | Nullable | Notes |
+| --- | --- | --- | --- |
+| `id` | INTEGER | no | PK |
+| `tenant_id` | CHAR(32) | no | FK → tenants.id |
+| `user_id` | INTEGER | no | FK → users.id |
+| `token_hash` | VARCHAR(64) | no | — |
+| `expires_at` | DATETIME | no | — |
+| `used_at` | DATETIME | yes | — |
 | `created_at` | DATETIME | no | — |
 | `created_by_user_id` | INTEGER | yes | FK → users.id |
 
@@ -120,6 +228,20 @@ Generated from SQLAlchemy models. Do not edit by hand.
 | `name` | VARCHAR(10) | no | — |
 | `room` | VARCHAR(40) | yes | — |
 | `class_teacher_id` | INTEGER | yes | FK → teachers.id |
+
+## `security_audit_events`
+
+| Column | Type | Nullable | Notes |
+| --- | --- | --- | --- |
+| `id` | INTEGER | no | PK |
+| `tenant_id` | CHAR(32) | no | FK → tenants.id |
+| `actor_user_id` | INTEGER | yes | FK → users.id |
+| `action` | VARCHAR(64) | no | — |
+| `target_type` | VARCHAR(64) | no | — |
+| `target_id` | VARCHAR(64) | no | — |
+| `metadata` | JSON | yes | — |
+| `correlation_id` | VARCHAR(128) | yes | — |
+| `created_at` | DATETIME | no | — |
 
 ## `students`
 
@@ -204,6 +326,17 @@ Generated from SQLAlchemy models. Do not edit by hand.
 | `start_date` | DATE | no | — |
 | `end_date` | DATE | no | — |
 
+## `user_mfa_recovery_codes`
+
+| Column | Type | Nullable | Notes |
+| --- | --- | --- | --- |
+| `id` | INTEGER | no | PK |
+| `tenant_id` | CHAR(32) | no | FK → tenants.id |
+| `user_id` | INTEGER | no | FK → users.id |
+| `code_hash` | VARCHAR(64) | no | — |
+| `used_at` | DATETIME | yes | — |
+| `created_at` | DATETIME | no | — |
+
 ## `users`
 
 | Column | Type | Nullable | Notes |
@@ -218,5 +351,10 @@ Generated from SQLAlchemy models. Do not edit by hand.
 | `role` | VARCHAR(7) | no | — |
 | `phone` | VARCHAR(32) | yes | — |
 | `is_active` | BOOLEAN | no | — |
+| `totp_secret_enc` | VARCHAR(512) | yes | — |
+| `totp_pending_secret_enc` | VARCHAR(512) | yes | — |
+| `mfa_enrolled_at` | DATETIME | yes | — |
+| `session_version` | INTEGER | no | — |
+| `must_change_password` | BOOLEAN | no | — |
 | `created_at` | DATETIME | no | — |
 | `last_login_at` | DATETIME | yes | — |

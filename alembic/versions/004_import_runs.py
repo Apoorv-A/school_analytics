@@ -27,7 +27,7 @@ def upgrade() -> None:
             sa.ForeignKey("tenants.id", ondelete="CASCADE"),
             nullable=False,
         ),
-        sa.Column("status", sa.String(20), nullable=False),
+        sa.Column("status", sa.String(9), nullable=False),
         sa.Column("source", sa.String(40), nullable=False),
         sa.Column("file_summary", sa.String(255), nullable=True),
         sa.Column("row_counts", sa.JSON(), nullable=True),

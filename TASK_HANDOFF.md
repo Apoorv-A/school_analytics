@@ -11,14 +11,14 @@
 - **Student combobox:** dropdown + search; drill-down preserves `student_id` while typing; filter query preserved on student switch
 - **Subject/class filters:** single-select dropdowns (reverted from pill UI per user)
 - **Student lookup page:** no default student until selected (`require_student`)
-- **Phase 2 slice:** `import_runs` audit, parent `student.insight_summary`, ERP webhook `POST /api/erp/import`, per-tenant `erp.webhookToken`
+- **Phase 2 slice:** `import_runs` audit, parent `student.insight_summary`, ERP webhook `POST /api/erp/import`, per-tenant `erp.webhookSecretRef`
 - **Import pipeline fixes:** scores, `school_structure`, remarks, users linking, per-user passwords on CLI/admin apply
 
 ## 2. Important decisions and constraints
 
 - **Two repos:** application code in `school_analytics`; tenant YAML/config in `school-analytics-config` (separate clone).
 - **Filter bar UI:** NO pill multi-select for subject/class (user preference). Single-select dropdowns in the filter bar. Multi `subject_ids` / `section_ids` via URL/API passthrough only.
-- **ERP webhook auth:** per-tenant token only (`settings_json.erp.webhookToken`); fail-closed; **no** global `ERP_WEBHOOK_TOKEN` fallback.
+- **ERP webhook auth:** per-tenant secret ref (`erp.webhookSecretRef` / `erp.webhookSigningSecretRef` → `SA_SECRET_<REF>`); fail-closed; **no** global fallback.
 - **Classroom charts:** `section_id` pins and clears `section_ids`; `_section_filters` honors single `section_ids` from bookmarks.
 - **Created-user passwords:** returned only on CLI/upload; stripped from audit payloads.
 - **RLS:** `tenants` and `tenant_domains` excluded from PostgreSQL RLS (registry/bootstrap tables).
@@ -46,21 +46,24 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ## 5. Known problems or unresolved questions
 
+- **Local venv vs CI:** preflight installs `requirements.lock` (includes `fakeredis`). A partial `.venv` misses Redis test deps and fails 6 webhook/throttle tests; run `pip install -r requirements.lock` before `pytest`.
+- **Embedded `config/`:** gitignored mirror of `school-analytics-config` for `tests/test_config_schema.py` and optional QA parity; deploy source remains the sibling repo. Copy `config/tools/promote.sh` → `school-analytics-config/scripts/promote.sh` when promoting locally.
+- **Parental consent (M6b):** migration `014_parental_consent`, `/api/consent/*` — no UI or analytics gating yet.
 - **Phase 2 remaining** (see `docs/product/phase2.md`): connector framework (SFTP, REST polling), scheduled sync jobs, delta detection, conflict-resolution UI.
 - **Test DB pollution:** stale `tests/test_school.db` (+ `.wal`/`.shm`) can cause flaky failures — remove and re-run pytest.
 - **`assessment_code` auto-create:** needs UT-style codes (e.g. `UT-MATH-6A-T1`); verify when seeding or importing new assessments.
-- **Webhook testing:** each tenant needs `erp.webhookToken` set in config before `POST /api/erp/import` will succeed.
+- **Webhook testing:** each tenant needs `erp.webhookSecretRef` set in config and a matching `SA_SECRET_<REF>` deployment secret before `POST /api/erp/import` will succeed.
 
 ## 6. Exact next step
 
 1. **Commit and push** local changes (not done in this session).
 2. **Continue Phase 2** from `docs/product/phase2.md` (connectors, delta sync UI) **or** follow user direction.
-3. For webhook smoke tests: set `erp.webhookToken` per tenant in `school-analytics-config`, then POST a CSV bundle to `/api/erp/import`.
+3. For webhook smoke tests: set `erp.webhookSecretRef` per tenant in `school-analytics-config`, provision `SA_SECRET_<REF>`, then POST a signed CSV bundle to `/api/erp/import`.
 
 ## 7. Anything the next agent must not change
 
 - **Do not** reintroduce pill multi-select for subject/class in the filter bar.
 - **Do not** add RLS to `tenants` or `tenant_domains`.
-- **Do not** add a global `ERP_WEBHOOK_TOKEN` fallback; keep per-tenant bearer auth only.
+- **Do not** add a global ERP webhook secret fallback; keep per-tenant secret refs only.
 - **Do not** return created-user passwords in audit/history responses (CLI/upload only).
 - **Do not** merge config into the code repo; keep `school-analytics-config` separate.

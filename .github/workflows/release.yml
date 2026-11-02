@@ -29,6 +29,4 @@ jobs:
           context: .
           file: deploy/Dockerfile
           push: true
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}:latest
+          tags: ghcr.io/${{ github.repository }}:${{ github.ref_name }}

@@ -13,6 +13,37 @@
   <pre id="import-report" class="import-report"></pre>
 </section>
 
+{% if pending_mappings %}
+<section class="card" style="margin-top: 16px;">
+  <h2>Assessment mapping queue</h2>
+  <p class="muted">Unknown assessment codes from imports are held here until mapped to an existing assessment or rejected.</p>
+  <table class="data">
+    <thead>
+      <tr>
+        <th>External key</th>
+        <th>Source</th>
+        <th>Sample row</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in pending_mappings %}
+      <tr data-queue-id="{{ item.id }}">
+        <td><code>{{ item.external_key }}</code></td>
+        <td>{{ item.source }}</td>
+        <td><code>{{ item.payload_snippet }}</code></td>
+        <td>
+          <input type="number" min="1" placeholder="Assessment ID" class="mapping-assessment-id" style="width:120px">
+          <button type="button" class="btn btn--primary" data-action="map-assessment">Map</button>
+          <button type="button" class="btn" data-action="reject-assessment">Reject</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
 {% if import_runs %}
 <section class="card" style="margin-top: 16px;">
   <h2>Recent import activity</h2>
@@ -48,7 +79,7 @@
   const report = document.getElementById("import-report");
   function run(endpoint) {
     const data = new FormData(form);
-    fetch(endpoint, { method: "POST", body: data, credentials: "same-origin" })
+    fetch(endpoint, { method: "POST", body: data, credentials: "same-origin", headers: csrfHeaders() })
       .then(function (r) { return r.json(); })
       .then(function (payload) {
         report.textContent = JSON.stringify(payload, null, 2);
@@ -66,6 +97,51 @@
   form.querySelector("[data-action='apply-import']").addEventListener("click", function () {
     if (!window.confirm("Apply these files to the live tenant database?")) return;
     run("/admin/import/apply");
+  });
+  document.querySelectorAll("[data-action='map-assessment']").forEach(function (button) {
+    button.addEventListener("click", function () {
+      const row = button.closest("tr");
+      const queueId = row.getAttribute("data-queue-id");
+      const assessmentId = row.querySelector(".mapping-assessment-id").value;
+      if (!assessmentId) {
+        window.alert("Enter an assessment ID to map.");
+        return;
+      }
+      fetch("/api/import/mapping-queue/" + queueId + "/map", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: Object.assign({ "Content-Type": "application/json" }, csrfHeaders()),
+        body: JSON.stringify({ assessment_id: Number(assessmentId) }),
+      })
+        .then(function (r) { return r.json().then(function (payload) { return { ok: r.ok, payload: payload }; }); })
+        .then(function (result) {
+          if (!result.ok) {
+            report.textContent = JSON.stringify(result.payload, null, 2);
+            return;
+          }
+          window.location.reload();
+        });
+    });
+  });
+  document.querySelectorAll("[data-action='reject-assessment']").forEach(function (button) {
+    button.addEventListener("click", function () {
+      const row = button.closest("tr");
+      const queueId = row.getAttribute("data-queue-id");
+      if (!window.confirm("Reject this external assessment key?")) return;
+      fetch("/api/import/mapping-queue/" + queueId + "/reject", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: csrfHeaders(),
+      })
+        .then(function (r) { return r.json().then(function (payload) { return { ok: r.ok, payload: payload }; }); })
+        .then(function (result) {
+          if (!result.ok) {
+            report.textContent = JSON.stringify(result.payload, null, 2);
+            return;
+          }
+          window.location.reload();
+        });
+    });
   });
 })();
 </script>

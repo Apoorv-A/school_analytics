@@ -15,7 +15,12 @@ from app.deps import AccessScope, get_access_scope, require_roles
 from app.models import Role
 from app.portals import render_dashboard, student_subtitle
 from app.schemas import FilterParams, filter_params
-from app.tenant.features import require_parent_portal, require_student_portal
+from app.tenant.features import (
+    require_parent_portal,
+    require_remarks_enabled,
+    require_student_portal,
+)
+from app.tenant.policy import filter_portal_cards
 
 _INSIGHT_SUMMARY_CARD = {
     "key": "student.insight_summary",
@@ -217,7 +222,7 @@ def build_student_portal(prefix: str, role: Role, tag: str) -> APIRouter:
             subtitle=student_subtitle(child),
             active_nav=prefix if page_key == "overview" else f"{prefix}/{page_key}",
             visible_filters=page["filters"],
-            cards=page["cards"],
+            cards=filter_portal_cards(page["cards"], scope),
             # Resolved through the scope above. A guardian with one child gets no
             # student control, so the charts would otherwise receive nothing.
             pinned=["student_id"],
@@ -254,6 +259,8 @@ def build_student_portal(prefix: str, role: Role, tag: str) -> APIRouter:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Page not found."
             )
+        if page_key == "remarks":
+            require_remarks_enabled()
         return render(request, page_key, db, scope, filters)
 
     return router

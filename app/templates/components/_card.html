@@ -11,7 +11,9 @@
       <p class="card__subtitle" data-chart-subtitle>{{ card.subtitle | default("") }}</p>
     </div>
     <div class="card__actions">
+      {% if exports_enabled | default(true) %}
       <button type="button" class="btn btn--sm" data-action="export" title="Download as CSV">CSV</button>
+      {% endif %}
       <button type="button" class="btn btn--sm" data-action="reload" title="Reload">Refresh</button>
     </div>
   </div>

@@ -13,6 +13,7 @@ from markupsafe import Markup
 from starlette.templating import Jinja2Templates
 
 from app.config import settings
+from app.csrf import CSRF_COOKIE_NAME, csrf_form_token
 from app.models import AssessmentType, Role
 
 templates = Jinja2Templates(directory=str(settings.templates_dir))
@@ -48,6 +49,8 @@ templates.env.filters["to_json"] = to_json
 templates.env.filters["percent"] = percent
 templates.env.filters["signed"] = signed
 templates.env.globals["app_name"] = settings.app_name
+templates.env.globals["csrf_cookie_name"] = CSRF_COOKIE_NAME
+templates.env.globals["csrf_form_token"] = csrf_form_token
 templates.env.globals["Role"] = Role
 templates.env.globals["assessment_types"] = [
     {"value": t.value, "label": t.label} for t in AssessmentType

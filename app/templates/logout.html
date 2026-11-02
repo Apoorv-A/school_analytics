@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signing out - {{ app_name }}</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<div class="auth-shell" style="justify-content:center">
+  <section class="auth-panel">
+    <div class="auth-card">
+      <h2>Signing out</h2>
+      <p class="muted">One moment…</p>
+      <form id="logout-form" method="post" action="/logout">
+        <input type="hidden" name="csrf_token" value="{{ csrf_form_token(request) }}">
+      </form>
+    </div>
+  </section>
+</div>
+<script>document.getElementById("logout-form").submit();</script>
+</body>
+</html>

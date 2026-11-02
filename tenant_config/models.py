@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+_SECRET_REF_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._/-]{0,126}$", re.IGNORECASE)
+
+from tenant_config.version_rules import explain, is_released  # noqa: E402
 
 
 class TenantEnvironment(StrEnum):
@@ -55,11 +61,64 @@ class FeatureFlags(BaseModel):
     interventions: bool = False
 
 
+class PortalPolicy(BaseModel):
+    """Family and student portal presentation rules."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    familyComparisonMode: Literal["self", "cohort"] = "self"
+
+
+class AttendancePolicy(BaseModel):
+    """How late and excused days contribute to attendance percentage."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    countLateAsPresent: bool = True
+    countExcusedAsPresent: bool = False
+
+
+class ErpConfig(BaseModel):
+    """ERP ingest settings persisted in ``settings_json.erp``.
+
+    Secret values are never stored here — only deployment secret references.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    webhookSecretRef: str = Field(default="", max_length=128)
+    webhookSigningSecretRef: str = Field(default="", max_length=128)
+
+    @field_validator("webhookSecretRef", "webhookSigningSecretRef")
+    @classmethod
+    def _validate_secret_ref(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            return ""
+        if not _SECRET_REF_PATTERN.match(cleaned):
+            raise ValueError(
+                "secret reference must start with a letter or digit and contain only "
+                "letters, digits, dots, underscores, slashes, or hyphens"
+            )
+        return cleaned
+
+
 class AuthPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    mfaRequiredRoles: list[str] = Field(default_factory=lambda: ["admin", "teacher"])
+    mfaEnabled: bool = False
+    mfaRequiredRoles: list[str] = Field(default_factory=list)
     sessionMaxAge: int = Field(default=28800, ge=300, le=86400)
+
+    @model_validator(mode="after")
+    def _validate_mfa(self) -> AuthPolicy:
+        from app.mfa import validate_mfa_roles
+
+        if self.mfaRequiredRoles:
+            if not self.mfaEnabled:
+                raise ValueError("mfaRequiredRoles requires mfaEnabled to be true")
+            validate_mfa_roles(self.mfaRequiredRoles)
+        return self
 
 
 class DemoDataConfig(BaseModel):
@@ -109,7 +168,7 @@ class ImageConfig(BaseModel):
     @classmethod
     def _not_latest(cls, value: str) -> str:
         if value == "latest":
-            raise ValueError("image.tag must not be 'latest'")
+            raise ValueError(f"image.tag {explain(value)}")
         return value
 
 
@@ -122,19 +181,35 @@ class TenantConfigDocument(BaseModel):
     school: SchoolDetails
     academics: AcademicThresholds
     features: FeatureFlags = Field(default_factory=FeatureFlags)
+    portal: PortalPolicy = Field(default_factory=PortalPolicy)
+    attendance: AttendancePolicy = Field(default_factory=AttendancePolicy)
     auth: AuthPolicy = Field(default_factory=AuthPolicy)
+    erp: ErpConfig = Field(default_factory=ErpConfig)
     telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
     resources: ResourceConfig = Field(default_factory=ResourceConfig)
     image: ImageConfig
     demoData: DemoDataConfig | None = None
 
     @model_validator(mode="after")
-    def _prod_rules(self) -> TenantConfigDocument:
+    def _environment_rules(self) -> TenantConfigDocument:
+        if self.tenant.environment in (TenantEnvironment.STG, TenantEnvironment.PROD):
+            if not is_released(self.image.tag):
+                raise ValueError(f"image.tag {explain(self.image.tag)}")
         if self.tenant.environment is TenantEnvironment.PROD:
             if self.demoData is not None and self.demoData.enabled:
                 raise ValueError("demoData is not allowed in production")
+            if not self.auth.mfaEnabled:
+                raise ValueError("production requires auth.mfaEnabled")
             if "admin" not in self.auth.mfaRequiredRoles:
-                raise ValueError("production requires admin in mfaRequiredRoles")
+                raise ValueError("production requires admin in auth.mfaRequiredRoles")
+            if self.features.bulkImport and not (
+                self.erp.webhookSecretRef.strip()
+                or self.erp.webhookSigningSecretRef.strip()
+            ):
+                raise ValueError(
+                    "production bulkImport requires erp.webhookSecretRef or "
+                    "erp.webhookSigningSecretRef to be set"
+                )
         return self
 
 

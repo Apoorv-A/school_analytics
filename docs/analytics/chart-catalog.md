@@ -39,3 +39,6 @@ Generated from `app/analytics/charts.py`. Do not edit by hand.
 | `school.at_risk` | School-wide at-risk cohort | table | admin |
 | `school.attendance_scatter` | Attendance versus performance | chart | admin |
 | `school.teacher_effectiveness` | Results by teacher | table | admin |
+| `staff.intervention_uncovered` | Flagged pupils with no plan | table | admin, teacher |
+| `staff.interventions_open` | Open intervention cases | table | admin, teacher |
+| `staff.intervention_outcomes` | Closed intervention outcomes | table | admin, teacher |

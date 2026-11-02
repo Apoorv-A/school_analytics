@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Intervention queue</h2>
+  <p class="muted">Open cases created from at-risk analytics. Log contacts and move cases to resolved when follow-up is complete.</p>
+  <div class="filters__actions" style="margin-bottom:12px">
+    <label>
+      Status
+      <select id="intervention-status-filter">
+        <option value="">All active</option>
+        <option value="open">Open</option>
+        <option value="in_progress">In progress</option>
+        <option value="resolved">Resolved</option>
+      </select>
+    </label>
+    <button type="button" class="btn" id="intervention-refresh">Refresh</button>
+  </div>
+  <div id="intervention-queue" class="state-table"></div>
+</section>
+
+<section class="card" style="margin-top:16px">
+  <h2>At-risk students</h2>
+  <p class="muted">Create a case for a flagged student. Only students in the at-risk cohort can be opened.</p>
+  <div id="intervention-at-risk" class="state-table"></div>
+</section>
+
+<section class="card" style="margin-top:16px" id="intervention-detail" hidden>
+  <h2>Case detail</h2>
+  <p class="muted" id="intervention-detail-title"></p>
+  <form id="intervention-update-form">
+    <div class="filters__row">
+      <label>Status
+        <select name="status">
+          <option value="open">Open</option>
+          <option value="in_progress">In progress</option>
+          <option value="resolved">Resolved</option>
+        </select>
+      </label>
+      <label>Notes summary
+        <input type="text" name="notes_summary" maxlength="4000">
+      </label>
+    </div>
+    <button type="submit" class="btn btn--primary">Save case</button>
+  </form>
+  <h3 style="margin-top:16px">Log contact</h3>
+  <form id="intervention-contact-form">
+    <div class="filters__row">
+      <label>Type
+        <select name="contact_type">
+          <option value="phone">Phone</option>
+          <option value="email">Email</option>
+          <option value="in_person">In person</option>
+          <option value="other">Other</option>
+        </select>
+      </label>
+      <label>Notes
+        <input type="text" name="notes" required maxlength="4000">
+      </label>
+    </div>
+    <button type="submit" class="btn">Add contact</button>
+  </form>
+  <ul id="intervention-contacts" class="remark-list"></ul>
+  <h3 style="margin-top:16px">Tasks</h3>
+  <form id="intervention-task-form">
+    <div class="filters__row">
+      <label>Title
+        <input type="text" name="title" required maxlength="200">
+      </label>
+      <label>Priority
+        <select name="priority">
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit" class="btn">Add task</button>
+  </form>
+  <ul id="intervention-tasks" class="remark-list"></ul>
+  <h3 style="margin-top:16px">Timeline</h3>
+  <ul id="intervention-events" class="remark-list"></ul>
+</section>
+
+<script>
+(function () {
+  const queueEl = document.getElementById("intervention-queue");
+  const atRiskEl = document.getElementById("intervention-at-risk");
+  const statusFilter = document.getElementById("intervention-status-filter");
+  const detailSection = document.getElementById("intervention-detail");
+  const detailTitle = document.getElementById("intervention-detail-title");
+  const updateForm = document.getElementById("intervention-update-form");
+  const contactForm = document.getElementById("intervention-contact-form");
+  const contactsEl = document.getElementById("intervention-contacts");
+  const tasksEl = document.getElementById("intervention-tasks");
+  const taskForm = document.getElementById("intervention-task-form");
+  const eventsEl = document.getElementById("intervention-events");
+  const atRiskChartKey = {{ at_risk_chart_key | tojson }};
+  let selectedCaseId = null;
+
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function queryString() {
+    const params = new URLSearchParams(window.location.search);
+    const status = statusFilter.value;
+    if (status) {
+      params.set("status", status);
+    } else {
+      params.delete("status");
+    }
+    return params.toString();
+  }
+
+  function loadQueue() {
+    const params = new URLSearchParams(window.location.search);
+    const status = statusFilter.value;
+    const apiParams = new URLSearchParams();
+    if (status) {
+      apiParams.set("status", status);
+    }
+    const sectionId = params.get("section_id");
+    if (sectionId) {
+      apiParams.set("section_id", sectionId);
+    }
+    fetch("/api/interventions?" + apiParams.toString(), { credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (payload) {
+        if (!payload.cases || !payload.cases.length) {
+          queueEl.innerHTML = "<p class='muted'>No intervention cases yet.</p>";
+          return;
+        }
+        const rows = payload.cases.map(function (item) {
+          return "<tr data-case-id='" + item.id + "'>" +
+            "<td>" + escapeHtml(item.student_label || item.student_name) + "</td>" +
+            "<td>" + escapeHtml(item.priority) + "</td>" +
+            "<td>" + escapeHtml(item.status) + "</td>" +
+            "<td>" + escapeHtml(item.reason_summary) + "</td>" +
+            "<td><button type='button' class='btn btn--small' data-open-case='" + item.id + "'>Open</button></td>" +
+            "</tr>";
+        }).join("");
+        queueEl.innerHTML = "<table class='data'><thead><tr><th>Student</th><th>Priority</th><th>Status</th><th>Reason</th><th></th></tr></thead><tbody>" + rows + "</tbody></table>";
+        queueEl.querySelectorAll("[data-open-case]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            openCase(Number(button.getAttribute("data-open-case")));
+          });
+        });
+      })
+      .catch(function () {
+        queueEl.textContent = "Could not load intervention queue.";
+      });
+  }
+
+  function loadAtRisk() {
+    const params = window.location.search || "";
+    fetch("/api/charts/" + encodeURIComponent(atRiskChartKey) + params, { credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (payload) {
+        const rows = (payload.rows || []).map(function (row) {
+          const studentId = row._student_id || row.student_id || row.id;
+          const label = row.name || row.student || "Student";
+          const reasons = (row.reasons || []).join("; ");
+          return "<tr><td>" + escapeHtml(label) + "</td><td>" + escapeHtml(reasons) + "</td>" +
+            "<td><button type='button' class='btn btn--small' data-create-case='" + studentId + "'>Create case</button></td></tr>";
+        }).join("");
+        if (!rows) {
+          atRiskEl.innerHTML = "<p class='muted'>No at-risk students under current filters.</p>";
+          return;
+        }
+        atRiskEl.innerHTML = "<table class='data'><thead><tr><th>Student</th><th>Signals</th><th></th></tr></thead><tbody>" + rows + "</tbody></table>";
+        atRiskEl.querySelectorAll("[data-create-case]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            createCase(Number(button.getAttribute("data-create-case")));
+          });
+        });
+      })
+      .catch(function () {
+        atRiskEl.textContent = "Could not load at-risk cohort.";
+      });
+  }
+
+  function createCase(studentId) {
+    fetch("/api/interventions", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: csrfHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ student_id: studentId, signal_source: "at_risk_analytics" }),
+    })
+      .then(function (r) {
+        if (!r.ok) {
+          return r.json().then(function (body) {
+            throw new Error(body.detail || "Create failed");
+          });
+        }
+        return r.json();
+      })
+      .then(function (payload) {
+        openCase(payload.id);
+        loadQueue();
+        loadAtRisk();
+      })
+      .catch(function (err) {
+        window.alert(err.message || "Could not create case.");
+      });
+  }
+
+  function openCase(caseId) {
+    selectedCaseId = caseId;
+    fetch("/api/interventions/" + caseId, { credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (payload) {
+        detailSection.hidden = false;
+        detailTitle.textContent = payload.student_label + " — " + payload.reason_summary;
+        updateForm.status.value = payload.status;
+        updateForm.notes_summary.value = payload.notes_summary || "";
+        contactsEl.innerHTML = (payload.contacts || []).map(function (contact) {
+          return "<li><strong>" + escapeHtml(contact.contact_type) + "</strong> " +
+            escapeHtml(contact.contacted_at) + ": " + escapeHtml(contact.notes) + "</li>";
+        }).join("") || "<li class='muted'>No contacts logged yet.</li>";
+        tasksEl.innerHTML = (payload.tasks || []).map(function (task) {
+          const completeBtn = task.status === "completed" || task.status === "cancelled"
+            ? ""
+            : " <button type='button' class='btn btn--small' data-complete-task='" + task.id + "'>Complete</button>";
+          return "<li><strong>" + escapeHtml(task.title) + "</strong> (" +
+            escapeHtml(task.status) + ", " + escapeHtml(task.priority) + ")" + completeBtn + "</li>";
+        }).join("") || "<li class='muted'>No tasks yet.</li>";
+        tasksEl.querySelectorAll("[data-complete-task]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            completeTask(Number(button.getAttribute("data-complete-task")));
+          });
+        });
+        fetch("/api/interventions/" + caseId + "/events", { credentials: "same-origin" })
+          .then(function (r) { return r.json(); })
+          .then(function (timeline) {
+            eventsEl.innerHTML = (timeline.events || []).map(function (event) {
+              const meta = event.metadata ? " " + escapeHtml(JSON.stringify(event.metadata)) : "";
+              return "<li><strong>" + escapeHtml(event.event_type) + "</strong> " +
+                escapeHtml(event.created_at) + meta + "</li>";
+            }).join("") || "<li class='muted'>No timeline events yet.</li>";
+          })
+          .catch(function () {
+            eventsEl.innerHTML = "<li class='muted'>Could not load timeline.</li>";
+          });
+      });
+  }
+
+  updateForm.addEventListener("submit", function (event) {
+    event.preventDefault();
+    if (!selectedCaseId) return;
+    fetch("/api/interventions/" + selectedCaseId, {
+      method: "PATCH",
+      credentials: "same-origin",
+      headers: csrfHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        status: updateForm.status.value,
+        notes_summary: updateForm.notes_summary.value,
+      }),
+    }).then(function () {
+      loadQueue();
+      openCase(selectedCaseId);
+    });
+  });
+
+  function completeTask(taskId) {
+    if (!selectedCaseId) return;
+    fetch("/api/interventions/" + selectedCaseId + "/tasks/" + taskId + "/complete", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: csrfHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ completion_note: "" }),
+    }).then(function () {
+      openCase(selectedCaseId);
+    });
+  }
+
+  taskForm.addEventListener("submit", function (event) {
+    event.preventDefault();
+    if (!selectedCaseId) return;
+    fetch("/api/interventions/" + selectedCaseId + "/tasks", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: csrfHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        title: taskForm.title.value,
+        priority: taskForm.priority.value,
+      }),
+    }).then(function () {
+      taskForm.title.value = "";
+      openCase(selectedCaseId);
+    });
+  });
+
+  contactForm.addEventListener("submit", function (event) {
+    event.preventDefault();
+    if (!selectedCaseId) return;
+    fetch("/api/interventions/" + selectedCaseId + "/contacts", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: csrfHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        contact_type: contactForm.contact_type.value,
+        notes: contactForm.notes.value,
+      }),
+    }).then(function () {
+      contactForm.notes.value = "";
+      loadQueue();
+      openCase(selectedCaseId);
+    });
+  });
+
+  statusFilter.addEventListener("change", function () {
+    const qs = queryString();
+    const next = qs ? "?" + qs : window.location.pathname;
+    window.history.replaceState({}, "", next);
+    loadQueue();
+  });
+  document.getElementById("intervention-refresh").addEventListener("click", function () {
+    loadQueue();
+    loadAtRisk();
+  });
+
+  loadQueue();
+  loadAtRisk();
+})();
+</script>
+{% endblock %}

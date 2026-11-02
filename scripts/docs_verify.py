@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def main() -> int:
-    subprocess.run(  # noqa: S603
+    subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "docs_generate.py")],
         check=True,
         cwd=ROOT,
@@ -21,7 +21,7 @@ def main() -> int:
     if git is None:
         print("git not found on PATH")
         return 1
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(
         [
             git,
             "diff",

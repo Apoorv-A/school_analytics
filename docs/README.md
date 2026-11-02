@@ -18,8 +18,12 @@ Canonical documentation for the Python multi-tenant school analytics platform.
 | [analytics/chart-catalog.yaml](analytics/chart-catalog.yaml) | Machine-readable chart registry |
 | [analytics/chart-catalog.md](analytics/chart-catalog.md) | Generated human-readable chart catalog |
 | [operations/tenant-onboarding.md](operations/tenant-onboarding.md) | Onboard a school via config only |
+| [operations/backup-restore.md](operations/backup-restore.md) | Backup, restore, and RPO/RTO targets |
+| [operations/supply-chain.md](operations/supply-chain.md) | Locked dependencies, pip-audit, SBOM |
+| [operations/production-support-matrix.md](operations/production-support-matrix.md) | Supported versions, MFA, escalation, exclusions |
 | [onboarding/school-intake-checklist.md](onboarding/school-intake-checklist.md) | CSV templates, validate/apply, bootstrap admin |
 | [product/erp-strategy.md](product/erp-strategy.md) | ERP coexistence and ingest roadmap |
+| [releases/](releases/) | **Semver release notes** — deployable version history |
 | [learnings/](learnings/README.md) | **Failure log** — symptoms, cause, fix (add one file per incident) |
 | [security/threat-model.md](security/threat-model.md) | Isolation, secrets, and child-data policy |
 | [adr/](adr/) | Architecture decision records |

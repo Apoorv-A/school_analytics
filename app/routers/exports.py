@@ -14,15 +14,17 @@ import csv
 import io
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Path, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.analytics.charts import CHART_REGISTRY
+from app.audit import SecurityAuditAction, SecurityAuditTarget, record_security_event
 from app.db import get_db
 from app.deps import AccessScope, get_access_scope
 from app.schemas import FilterParams, filter_params
 from app.tenant.features import require_exports_enabled
+from app.tenant.policy import guard_cohort_chart, sanitize_family_chart
 
 router = APIRouter(prefix="/export", tags=["export"])
 
@@ -136,6 +138,7 @@ def _rows_for(payload: dict) -> tuple[list[str], list[list[object]]]:
 
 @router.get("/{chart_key}.csv")
 def export_chart_csv(
+    request: Request,
     chart_key: str = Path(min_length=1, max_length=64, pattern=r"^[a-z]+\.[a-z_]+$"),
     filters: FilterParams = Depends(filter_params),
     db: Session = Depends(get_db),
@@ -149,11 +152,12 @@ def export_chart_csv(
         )
     if scope.role not in definition.roles:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your role cannot export this data.",
+            status_code=status.HTTP_404_NOT_FOUND, detail="Not found."
         )
 
+    guard_cohort_chart(chart_key, scope)
     payload = definition.handler(db, scope.narrow(filters, db), scope)
+    payload = sanitize_family_chart(chart_key, payload, scope)
     header, rows = _rows_for(payload)
 
     buffer = io.StringIO()
@@ -166,6 +170,18 @@ def export_chart_csv(
     writer.writerow([_safe_cell(cell) for cell in header])
     writer.writerows([_safe_cell(cell) for cell in row] for row in rows)
     buffer.seek(0)
+
+    record_security_event(
+        db,
+        tenant_id=scope.tenant_id,
+        action=SecurityAuditAction.EXPORT_DOWNLOAD,
+        target_type=SecurityAuditTarget.EXPORT,
+        target_id=chart_key,
+        actor_user_id=scope.user.id,
+        metadata={"format": "csv"},
+        request=request,
+    )
+    db.commit()
 
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
     filename = f"{chart_key.replace('.', '-')}-{stamp}.csv"

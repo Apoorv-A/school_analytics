@@ -10,6 +10,7 @@ import pytest
 
 from app.analytics.charts import CHART_REGISTRY
 from app.models import Role
+from app.tenant.policy import COHORT_ONLY_CHART_KEYS
 
 
 def _keys_for_role(prefix: str, role: Role) -> list[str]:
@@ -21,6 +22,10 @@ def _keys_for_role(prefix: str, role: Role) -> list[str]:
 
 
 STUDENT_KEYS = _keys_for_role("student.", Role.PARENT)
+# Seeded tenants default to self-comparison mode; cohort charts are hidden from families.
+STUDENT_KEYS_FAMILY = [
+    key for key in STUDENT_KEYS if key not in COHORT_ONLY_CHART_KEYS
+]
 STUDENT_KEYS_ADMIN = _keys_for_role("student.", Role.ADMIN)
 SECTION_KEYS = sorted(k for k in CHART_REGISTRY if k.startswith("section."))
 SCHOOL_KEYS = sorted(k for k in CHART_REGISTRY if k.startswith("school."))
@@ -98,13 +103,13 @@ class TestRegistry:
         }
         assert SCHOOL_KEYS[0] in admin_keys
         assert not (parent_keys & set(SCHOOL_KEYS))
-        assert parent_keys == set(STUDENT_KEYS)
+        assert parent_keys == set(STUDENT_KEYS_FAMILY)
         assert "student.insights" in admin_keys
         assert "student.insights" not in parent_keys
 
 
 class TestStudentCharts:
-    @pytest.mark.parametrize("key", STUDENT_KEYS)
+    @pytest.mark.parametrize("key", STUDENT_KEYS_FAMILY)
     def test_parent_can_render_every_student_chart(self, parent_context, key):
         response = parent_context["client"].get(
             f"/api/charts/{key}", params={"student_id": parent_context["child_id"]}
@@ -112,7 +117,7 @@ class TestStudentCharts:
         assert response.status_code == 200, f"{key}: {response.text[:200]}"
         assert_valid_payload(response.json(), key)
 
-    @pytest.mark.parametrize("key", STUDENT_KEYS)
+    @pytest.mark.parametrize("key", STUDENT_KEYS_FAMILY)
     def test_student_can_render_every_student_chart(self, student_context, key):
         response = student_context["client"].get(f"/api/charts/{key}")
         assert response.status_code == 200, f"{key}: {response.text[:200]}"
@@ -974,7 +979,7 @@ class TestPortalPages:
                 "/api/charts/student.insight_summary",
                 params={"student_id": student_id},
             ).status_code
-            == 403
+            == 404
         )
 
 
@@ -1015,7 +1020,7 @@ class TestExports:
         assert "attachment" in response.headers["content-disposition"]
         assert len(response.text.splitlines()) >= 4
 
-    @pytest.mark.parametrize("key", STUDENT_KEYS)
+    @pytest.mark.parametrize("key", STUDENT_KEYS_FAMILY)
     def test_parent_can_export_every_student_chart(self, parent_context, key):
         response = parent_context["client"].get(
             f"/export/{key}.csv", params={"student_id": parent_context["child_id"]}
@@ -1107,3 +1112,10 @@ class TestHealth:
         response = anon_client.get("/healthz")
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
+
+    def test_readyz_is_public(self, anon_client):
+        response = anon_client.get("/readyz")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["database"] == "ok"
+        assert body["migrations"] == "ok"

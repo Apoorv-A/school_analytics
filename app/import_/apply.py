@@ -7,18 +7,19 @@ import re
 import secrets
 import tempfile
 import uuid
+from datetime import date
 from pathlib import Path
 
 from fastapi import UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.import_.mapping_queue import queue_unmapped_assessment, score_payload_snippet
 from app.import_.upload_io import write_named_uploads
 from app.import_.validate import validate_directory
 from app.models import (
     AcademicYear,
     Assessment,
-    AssessmentType,
     Attendance,
     AttendanceStatus,
     Grade,
@@ -53,19 +54,6 @@ def _parse_subject_codes(raw: str | None) -> list[str]:
     if not raw:
         return []
     return [code.strip() for code in raw.split(",") if code.strip()]
-
-
-_ASSESSMENT_CODE = re.compile(
-    r"^(?P<type>UT|MT|FN|AS|PJ)-(?P<subject>[A-Z0-9]+)-(?P<section>\d+[A-Za-z]+)-T(?P<term>\d+)$",
-    re.IGNORECASE,
-)
-_ASSESSMENT_TYPE_PREFIX = {
-    "UT": AssessmentType.UNIT_TEST,
-    "MT": AssessmentType.MID_TERM,
-    "FN": AssessmentType.FINAL,
-    "AS": AssessmentType.ASSIGNMENT,
-    "PJ": AssessmentType.PROJECT,
-}
 
 
 def _next_roll_no(db: Session, section_id: int) -> int:
@@ -111,66 +99,21 @@ def _ensure_student(
     return student, None
 
 
-def _ensure_assessment(
+def _resolve_assessment(
     db: Session,
     tenant_id: uuid.UUID,
-    school: School,
-    *,
     assessment_code: str,
-    student: Student,
-    source_system: str | None,
-) -> tuple[Assessment | None, str | None]:
-    """Resolve or create an assessment keyed by assessment_code → external_id."""
-    assessment = db.scalars(
+) -> Assessment | None:
+    """Resolve an assessment that was explicitly mapped via external_id."""
+    normalized = assessment_code.strip()
+    if not normalized:
+        return None
+    return db.scalars(
         select(Assessment).where(
             Assessment.tenant_id == tenant_id,
-            Assessment.external_id == assessment_code,
+            Assessment.external_id == normalized,
         )
     ).first()
-    if assessment is not None:
-        return assessment, None
-
-    match = _ASSESSMENT_CODE.fullmatch(assessment_code.strip())
-    if match is None:
-        return None, f"Assessment code {assessment_code!r} not found"
-
-    subject = db.scalars(
-        select(Subject).where(
-            Subject.school_id == school.id,
-            Subject.code == match.group("subject").upper(),
-        )
-    ).first()
-    if subject is None:
-        return None, f"subject for assessment code {assessment_code!r} not found"
-
-    section = _resolve_section_code(
-        db, tenant_id, school.id, match.group("section")
-    )
-    if section is None:
-        return None, f"section for assessment code {assessment_code!r} not found"
-
-    term = _resolve_term_sequence(
-        db, tenant_id, school.id, int(match.group("term"))
-    )
-    if term is None:
-        return None, f"term for assessment code {assessment_code!r} not found"
-
-    assessment_type = _ASSESSMENT_TYPE_PREFIX[match.group("type").upper()]
-    assessment = Assessment(
-        tenant_id=tenant_id,
-        name=f"{subject.name} {assessment_type.label}",
-        assessment_type=assessment_type,
-        subject_id=subject.id,
-        section_id=section.id,
-        term_id=term.id,
-        max_marks=100.0,
-        conducted_on=term.start_date,
-        external_id=assessment_code,
-        source_system=source_system,
-    )
-    db.add(assessment)
-    db.flush()
-    return assessment, None
 
 
 def _sanitize_report_for_audit(report: dict[str, object]) -> dict[str, object]:
@@ -220,7 +163,9 @@ def apply_directory(
         created_users.extend(new_users)
     scores_path = directory / "scores.csv"
     if scores_path.exists():
-        count, score_warnings = _apply_scores(db, tenant_id, scores_path)
+        count, score_warnings = _apply_scores(
+            db, tenant_id, scores_path, source=source
+        )
         applied["scores.csv"] = count
         warnings.extend(score_warnings)
     attendance_path = directory / "attendance.csv"
@@ -254,6 +199,18 @@ def apply_directory(
         report=_sanitize_report_for_audit({**result, "summary": applied}),
         user_id=user_id,
     )
+    if user_id is not None:
+        from app.audit import SecurityAuditAction, SecurityAuditTarget, record_security_event
+
+        record_security_event(
+            db,
+            tenant_id=tenant_id,
+            action=SecurityAuditAction.IMPORT_APPLY,
+            target_type=SecurityAuditTarget.IMPORT,
+            target_id="bulk",
+            actor_user_id=user_id,
+            metadata={"source": source, "files": sorted(applied.keys())},
+        )
     db.commit()
     return result
 
@@ -313,6 +270,22 @@ def _resolve_term_sequence(
             Term.sequence == term_sequence,
         )
     ).first()
+
+
+def _resolve_term_for_date(
+    db: Session, tenant_id: uuid.UUID, on_date: date
+) -> Term | None:
+    """Map an attendance date to exactly one academic term, if unambiguous."""
+    terms = db.scalars(
+        select(Term).where(
+            Term.tenant_id == tenant_id,
+            Term.start_date <= on_date,
+            Term.end_date >= on_date,
+        )
+    ).all()
+    if len(terms) == 1:
+        return terms[0]
+    return None
 
 
 def _teacher_for_user(db: Session, tenant_id: uuid.UUID, user: User) -> Teacher | None:
@@ -433,6 +406,7 @@ def _apply_users(
                     full_name=data.full_name,
                     role=csv_role,
                     password_hash=hash_password(temporary_password),
+                    must_change_password=True,
                     external_id=data.external_id,
                     source_system=data.source_system,
                 )
@@ -574,7 +548,9 @@ def _apply_users(
     return count, warnings, created_users
 
 
-def _apply_scores(db: Session, tenant_id: uuid.UUID, path: Path) -> ApplyResult:
+def _apply_scores(
+    db: Session, tenant_id: uuid.UUID, path: Path, *, source: str
+) -> ApplyResult:
     from app.import_.models import ScoreRow
 
     school = _tenant_school(db, tenant_id)
@@ -607,22 +583,45 @@ def _apply_scores(db: Session, tenant_id: uuid.UUID, path: Path) -> ApplyResult:
                     )
                 )
                 continue
-            assessment, error = _ensure_assessment(
-                db,
-                tenant_id,
-                school,
-                assessment_code=data.assessment_code,
-                student=student,
-                source_system=data.source_system,
+            assessment = _resolve_assessment(
+                db, tenant_id, data.assessment_code
             )
             if assessment is None:
-                warnings.append(
-                    _row_warning(
-                        path.name,
-                        row_number,
-                        error or f"Assessment code {data.assessment_code!r} not found",
-                    )
+                queued = queue_unmapped_assessment(
+                    db,
+                    tenant_id=tenant_id,
+                    source=source,
+                    external_key=data.assessment_code,
+                    payload_snippet=score_payload_snippet(
+                        admission_no=data.admission_no,
+                        marks_obtained=data.marks_obtained,
+                        is_absent=data.is_absent,
+                        source_system=data.source_system,
+                        external_id=data.external_id,
+                    ),
                 )
+                if queued is None:
+                    warnings.append(
+                        _row_warning(
+                            path.name,
+                            row_number,
+                            (
+                                f"Assessment code {data.assessment_code!r} was "
+                                "rejected by an administrator"
+                            ),
+                        )
+                    )
+                else:
+                    warnings.append(
+                        _row_warning(
+                            path.name,
+                            row_number,
+                            (
+                                f"Assessment code {data.assessment_code!r} is "
+                                "queued for administrator mapping"
+                            ),
+                        )
+                    )
                 continue
             if student.section_id != assessment.section_id:
                 warnings.append(
@@ -630,6 +629,32 @@ def _apply_scores(db: Session, tenant_id: uuid.UUID, path: Path) -> ApplyResult:
                         path.name,
                         row_number,
                         f"Student {data.admission_no!r} is not in the assessment section",
+                    )
+                )
+                continue
+            if data.is_absent and data.marks_obtained is not None:
+                warnings.append(
+                    _row_warning(
+                        path.name,
+                        row_number,
+                        "Absent scores must not include marks_obtained",
+                    )
+                )
+                continue
+            if (
+                not data.is_absent
+                and data.marks_obtained is not None
+                and (
+                    data.marks_obtained < 0
+                    or data.marks_obtained > assessment.max_marks
+                )
+            ):
+                warnings.append(
+                    _row_warning(
+                        path.name,
+                        row_number,
+                        f"marks_obtained {data.marks_obtained} is outside "
+                        f"0..{assessment.max_marks} for {data.assessment_code!r}",
                     )
                 )
                 continue
@@ -684,6 +709,16 @@ def _apply_attendance(db: Session, tenant_id: uuid.UUID, path: Path) -> ApplyRes
                     )
                 )
                 continue
+            term = _resolve_term_for_date(db, tenant_id, data.on_date)
+            if term is None:
+                warnings.append(
+                    _row_warning(
+                        path.name,
+                        row_number,
+                        f"on_date {data.on_date} does not fall in a single academic term",
+                    )
+                )
+                continue
             existing = db.scalars(
                 select(Attendance).where(
                     Attendance.student_id == student.id,
@@ -695,6 +730,7 @@ def _apply_attendance(db: Session, tenant_id: uuid.UUID, path: Path) -> ApplyRes
                     Attendance(
                         tenant_id=tenant_id,
                         student_id=student.id,
+                        term_id=term.id,
                         on_date=data.on_date,
                         status=AttendanceStatus(data.status),
                         external_id=data.external_id,
@@ -703,6 +739,7 @@ def _apply_attendance(db: Session, tenant_id: uuid.UUID, path: Path) -> ApplyRes
                 )
                 count += 1
             else:
+                existing.term_id = term.id
                 existing.status = AttendanceStatus(data.status)
                 existing.external_id = data.external_id
                 existing.source_system = data.source_system

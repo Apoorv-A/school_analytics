@@ -33,8 +33,6 @@ def create_remark(
 ) -> dict:
     require_remarks_enabled()
     scope.assert_student(payload.student_id)
-    if payload.subject_id is not None:
-        scope.assert_subject(payload.subject_id)
 
     student = db.get(Student, payload.student_id)
     if student is None:
@@ -42,6 +40,7 @@ def create_remark(
             status_code=status.HTTP_404_NOT_FOUND, detail="Student not found."
         )
     scope.assert_tenant_record(student.tenant_id, "Student")
+    scope.assert_section_subject(student.section_id, payload.subject_id)
 
     if payload.term_id is not None:
         term = db.get(Term, payload.term_id)

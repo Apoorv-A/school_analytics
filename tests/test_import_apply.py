@@ -18,6 +18,8 @@ from app.models import (
     Attendance,
     AttendanceStatus,
     Grade,
+    ImportMappingQueue,
+    ImportMappingQueueStatus,
     Remark,
     Role,
     Score,
@@ -42,8 +44,38 @@ def tenant_bundle_dir(tmp_path, db):
     return tenant.id, tmp_path
 
 
+def _assessment_for_student(
+    db,
+    tenant_id,
+    student: Student,
+    *,
+    external_id: str,
+    max_marks: float = 100.0,
+) -> Assessment:
+    section = db.get(Section, student.section_id)
+    subject = db.scalars(select(Subject).limit(1)).one()
+    year = db.get(AcademicYear, section.academic_year_id)
+    term = db.scalars(
+        select(Term).where(Term.academic_year_id == year.id).limit(1)
+    ).one()
+    assessment = Assessment(
+        tenant_id=tenant_id,
+        name="Import mapping test assessment",
+        assessment_type=AssessmentType.UNIT_TEST,
+        subject_id=subject.id,
+        section_id=section.id,
+        term_id=term.id,
+        max_marks=max_marks,
+        conducted_on=date(2025, 8, 1),
+        external_id=external_id,
+    )
+    db.add(assessment)
+    db.commit()
+    return assessment
+
+
 class TestApplyScores:
-    def test_apply_scores_creates_assessment_from_code(self, db, tenant_bundle_dir):
+    def test_apply_scores_queues_unknown_assessment(self, db, tenant_bundle_dir):
         tenant_id, directory = tenant_bundle_dir
         student = db.scalars(
             select(Student)
@@ -56,26 +88,34 @@ class TestApplyScores:
         _write_csv(
             directory / "scores.csv",
             "admission_no,assessment_code,marks_obtained,is_absent,external_id,source_system",
-            f"{student.admission_no},UT-MATH-6A-T1,38,false,score-new,erp",
+            f"{student.admission_no},QUEUE-UT-MATH-6A-T1,38,false,score-queue-new,erp",
         )
         report = apply_directory(db, tenant_id, directory)
         assert report["applied"] is True
-        assert report["rows"]["scores.csv"] == 1
-        assert report.get("warnings", []) == []
+        assert report["rows"]["scores.csv"] == 0
+        assert report.get("partial") is True
+        warnings = report.get("warnings", [])
+        assert any("queued for administrator mapping" in item["error"] for item in warnings)
 
         assessment = db.scalars(
             select(Assessment).where(
                 Assessment.tenant_id == tenant_id,
-                Assessment.external_id == "UT-MATH-6A-T1",
+                Assessment.external_id == "QUEUE-UT-MATH-6A-T1",
             )
-        ).one()
-        assert assessment.section_id == student.section_id
+        ).first()
+        assert assessment is None
         score = db.scalars(
-            select(Score).where(
-                Score.student_id == student.id, Score.assessment_id == assessment.id
+            select(Score).where(Score.external_id == "score-queue-new")
+        ).first()
+        assert score is None
+        queued = db.scalars(
+            select(ImportMappingQueue).where(
+                ImportMappingQueue.tenant_id == tenant_id,
+                ImportMappingQueue.external_key == "QUEUE-UT-MATH-6A-T1",
+                ImportMappingQueue.status == ImportMappingQueueStatus.PENDING,
             )
         ).one()
-        assert score.marks_obtained == 38.0
+        assert queued.payload_snippet["admission_no"] == student.admission_no
 
     def test_apply_scores_inserts_and_updates(self, db, tenant_bundle_dir):
         tenant_id, directory = tenant_bundle_dir
@@ -126,6 +166,35 @@ class TestApplyScores:
         assert report["rows"]["scores.csv"] == 1
         assert score.marks_obtained == 45.0
 
+    def test_apply_scores_rejects_marks_above_max(self, db, tenant_bundle_dir):
+        tenant_id, directory = tenant_bundle_dir
+        student = db.scalars(
+            select(Student)
+            .join(Section, Student.section_id == Section.id)
+            .join(Grade, Section.grade_id == Grade.id)
+            .where(Grade.level == 6, Section.name == "A")
+            .limit(1)
+        ).one()
+        _assessment_for_student(
+            db, tenant_id, student, external_id="UT-MATH-6A-T1", max_marks=100.0
+        )
+
+        _write_csv(
+            directory / "scores.csv",
+            "admission_no,assessment_code,marks_obtained,is_absent,external_id,source_system",
+            f"{student.admission_no},UT-MATH-6A-T1,150,false,score-over-max,erp",
+        )
+        report = apply_directory(db, tenant_id, directory)
+        assert report["applied"] is True
+        assert report.get("partial") is True
+        assert report["rows"]["scores.csv"] == 0
+        warnings = report.get("warnings", [])
+        assert any("outside" in item["error"] for item in warnings)
+        score = db.scalars(
+            select(Score).where(Score.external_id == "score-over-max")
+        ).first()
+        assert score is None
+
 
 class TestApplyAttendance:
     def test_apply_attendance_inserts_and_updates(self, db, tenant_bundle_dir):
@@ -150,6 +219,10 @@ class TestApplyAttendance:
         ).one()
         assert row.status == AttendanceStatus.PRESENT
         assert row.external_id == "att-1"
+        assert row.term_id is not None
+        term = db.get(Term, row.term_id)
+        assert term is not None
+        assert term.start_date <= on_date <= term.end_date
 
         _write_csv(
             directory / "attendance.csv",
@@ -161,6 +234,58 @@ class TestApplyAttendance:
         assert report["rows"]["attendance.csv"] == 1
         assert row.status == AttendanceStatus.ABSENT
         assert row.source_system == "erp-v2"
+
+    def test_apply_attendance_is_visible_in_year_scoped_reports(self, db, tenant_bundle_dir):
+        from app.analytics.queries import attendance_by_student
+        from app.deps import AccessScope
+        from app.schemas import FilterParams
+
+        tenant_id, directory = tenant_bundle_dir
+        student = db.scalars(select(Student).where(Student.tenant_id == tenant_id).limit(1)).one()
+        year = db.scalars(
+            select(AcademicYear).where(AcademicYear.tenant_id == tenant_id).limit(1)
+        ).one()
+        on_date = date(2025, 8, 15)
+
+        _write_csv(
+            directory / "attendance.csv",
+            "admission_no,on_date,status,external_id,source_system",
+            f"{student.admission_no},{on_date.isoformat()},present,att-year,erp",
+        )
+        report = apply_directory(db, tenant_id, directory)
+        assert report["rows"]["attendance.csv"] == 1
+
+        admin = db.scalars(
+            select(User).where(User.tenant_id == tenant_id, User.role == Role.ADMIN).limit(1)
+        ).one()
+        scope = AccessScope(
+            tenant_id=tenant_id,
+            user=admin,
+            academic_year=year,
+            student_ids=frozenset({student.id}),
+            section_ids=None,
+            subject_ids=None,
+        )
+        filters = FilterParams(academic_year_id=year.id)
+        totals = attendance_by_student(db, [student.id], filters, scope)
+        assert totals[student.id]["total"] >= 1
+
+    def test_apply_attendance_rejects_out_of_term_dates(self, db, tenant_bundle_dir):
+        tenant_id, directory = tenant_bundle_dir
+        student = db.scalars(select(Student).where(Student.tenant_id == tenant_id).limit(1)).one()
+        on_date = date(2010, 1, 15)
+
+        _write_csv(
+            directory / "attendance.csv",
+            "admission_no,on_date,status,external_id,source_system",
+            f"{student.admission_no},{on_date.isoformat()},present,att-bad,erp",
+        )
+        report = apply_directory(db, tenant_id, directory)
+        assert report["rows"]["attendance.csv"] == 0
+        assert any(
+            "does not fall in a single academic term" in item["error"]
+            for item in report.get("warnings", [])
+        )
 
     def test_apply_attendance_reports_unknown_admission_no(self, db, tenant_bundle_dir):
         tenant_id, directory = tenant_bundle_dir
@@ -380,7 +505,7 @@ class TestApplyScoresSectionResolution:
         assert report.get("partial") is True
         assert report["rows"]["scores.csv"] == 0
         warnings = report.get("warnings", [])
-        assert any("section for assessment code" in item["error"] for item in warnings)
+        assert any("queued for administrator mapping" in item["error"] for item in warnings)
 
         assessment = db.scalars(
             select(Assessment).where(
@@ -785,19 +910,35 @@ def _enable_bulk_import(db, *, tenant_key: str = "sunrise") -> None:
     db.commit()
 
 
-def _set_erp_webhook_token(db, token: str, *, tenant_key: str = "sunrise") -> None:
+def _set_erp_webhook_secret(
+    db,
+    secret: str,
+    *,
+    tenant_key: str = "sunrise",
+    secret_ref: str = "sunrise/erp-webhook",
+    monkeypatch=None,
+) -> None:
     from sqlalchemy.orm.attributes import flag_modified
 
     from app.models import Tenant
+    from app.secrets import secret_env_name
 
     tenant = db.scalars(select(Tenant).where(Tenant.key == tenant_key)).one()
     settings = dict(tenant.settings_json or {})
     erp = dict(settings.get("erp") or {})
-    erp["webhookToken"] = token
+    erp["webhookSecretRef"] = secret_ref
     settings["erp"] = erp
     tenant.settings_json = settings
     flag_modified(tenant, "settings_json")
     db.commit()
+
+    env_name = secret_env_name(secret_ref)
+    if monkeypatch is not None:
+        monkeypatch.setenv(env_name, secret)
+    else:
+        import os
+
+        os.environ[env_name] = secret
 
 
 class TestImportApiGuards:

@@ -83,35 +83,64 @@ class TestRoleSeparation:
 
     @pytest.mark.parametrize("path", ["/teacher", "/admin", "/student"])
     def test_parent_cannot_open_other_portals(self, parent_context, path):
-        assert parent_context["client"].get(path).status_code == 403
+        response = parent_context["client"].get(path)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/parent"
 
     @pytest.mark.parametrize("path", ["/admin", "/parent", "/student"])
     def test_teacher_cannot_open_other_portals(self, teacher_context, path):
-        assert teacher_context["client"].get(path).status_code == 403
+        response = teacher_context["client"].get(path)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/teacher"
 
     @pytest.mark.parametrize("path", ["/parent", "/teacher", "/admin"])
     def test_student_cannot_open_other_portals(self, student_context, path):
-        assert student_context["client"].get(path).status_code == 403
+        response = student_context["client"].get(path)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/student"
 
     @pytest.mark.parametrize("path", ["/parent", "/teacher", "/student"])
     def test_admin_cannot_open_the_personal_portals(self, admin_client, path):
-        assert admin_client.get(path).status_code == 403
+        response = admin_client.get(path)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin"
+
+    @pytest.mark.parametrize("path", ["/student", "/teacher", "/admin"])
+    def test_wrong_portal_json_requests_stay_forbidden(self, parent_context, path):
+        response = parent_context["client"].get(
+            path, headers={"Accept": "application/json"}
+        )
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Your role does not have access to this portal."
+
+    def test_login_switch_clears_session_and_shows_form(self, admin_client):
+        response = admin_client.get("/login", params={"switch": "1"})
+        assert response.status_code == 200
+        assert "Sign in" in response.text
+        landing = admin_client.get("/admin")
+        assert landing.status_code == 303
+        assert landing.headers["location"] == "/login"
+
+    def test_authenticated_login_redirects_to_portal_home(self, admin_client):
+        response = admin_client.get("/login")
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin"
 
     def test_parent_cannot_request_a_school_wide_chart(self, parent_context):
         response = parent_context["client"].get("/api/charts/school.kpis")
-        assert response.status_code == 403
+        assert response.status_code == 404
 
     def test_parent_cannot_request_a_classroom_chart(self, parent_context):
         response = parent_context["client"].get("/api/charts/section.students_table")
-        assert response.status_code == 403
+        assert response.status_code == 404
 
     def test_teacher_cannot_request_a_school_wide_chart(self, teacher_context):
         response = teacher_context["client"].get("/api/charts/school.at_risk")
-        assert response.status_code == 403
+        assert response.status_code == 404
 
     def test_teacher_cannot_export_a_school_wide_dataset(self, teacher_context):
         response = teacher_context["client"].get("/export/school.at_risk.csv")
-        assert response.status_code == 403
+        assert response.status_code == 404
 
 
 class TestParentScope:
@@ -166,8 +195,22 @@ class TestParentScope:
         assert parent_context["child_id"] in listed
         assert parent_context["other_student_id"] not in listed
 
-    def test_parent_still_gets_a_real_class_benchmark(self, parent_context):
+    def test_parent_still_gets_a_real_class_benchmark(self, parent_context, db):
         """The class average must be computed from the whole class, not one child."""
+        from sqlalchemy import select
+        from sqlalchemy.orm.attributes import flag_modified
+
+        from app.models import Tenant
+
+        tenant = db.scalars(select(Tenant).where(Tenant.key == "sunrise")).one()
+        settings = dict(tenant.settings_json or {})
+        portal = dict(settings.get("portal") or {})
+        portal["familyComparisonMode"] = "cohort"
+        settings["portal"] = portal
+        tenant.settings_json = settings
+        flag_modified(tenant, "settings_json")
+        db.commit()
+
         payload = parent_context["client"].get(
             "/api/charts/student.vs_class",
             params={"student_id": parent_context["child_id"]},
@@ -423,9 +466,81 @@ class TestInputValidation:
 
 
 class TestSessionLifecycle:
+    def test_logout_get_shows_auto_submit_form(self, admin_client):
+        response = admin_client.get("/logout")
+        assert response.status_code == 200
+        assert 'method="post"' in response.text
+        assert 'action="/logout"' in response.text
+        assert 'name="csrf_token"' in response.text
+
+    def test_logout_get_redirects_anonymous_users(self, anon_client):
+        response = anon_client.get("/logout", follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/login"
+
+    def test_logout_post_redirects_to_login(self, anon_client):
+        response = anon_client.post("/logout")
+        assert response.status_code == 303
+        assert response.headers["location"] == "/login"
+
+    def test_logout_post_with_form_csrf_token(self, admin_client):
+        from fastapi.testclient import TestClient
+
+        from app.config import settings
+        from app.csrf import CSRF_COOKIE_NAME, CSRF_FORM_FIELD
+        from app.main import app
+        from tests.conftest import DEFAULT_HEADERS
+
+        client = TestClient(app, headers=DEFAULT_HEADERS, follow_redirects=False)
+        client.cookies.set(
+            settings.session_cookie_name,
+            admin_client.cookies.get(settings.session_cookie_name),
+        )
+        token = admin_client.cookies.get(CSRF_COOKIE_NAME)
+        client.cookies.set(CSRF_COOKIE_NAME, token)
+        response = client.post("/logout", data={CSRF_FORM_FIELD: token})
+        assert response.status_code == 303
+        assert response.headers["location"] == "/login"
+
+    def test_logout_post_after_page_bind_issues_csrf(self, admin_client):
+        """Legacy sessions without a CSRF cookie get a token when a page loads."""
+        from fastapi.testclient import TestClient
+
+        from app.config import settings
+        from app.csrf import CSRF_COOKIE_NAME, CSRF_FORM_FIELD
+        from app.main import app
+        from tests.conftest import DEFAULT_HEADERS
+
+        session_only = TestClient(app, headers=DEFAULT_HEADERS, follow_redirects=False)
+        session_only.cookies.set(
+            settings.session_cookie_name,
+            admin_client.cookies.get(settings.session_cookie_name),
+        )
+        page = session_only.get("/admin")
+        assert page.status_code == 200
+        csrf_cookie = session_only.cookies.get(CSRF_COOKIE_NAME)
+        assert csrf_cookie
+        import re
+
+        match = re.search(r'name="csrf_token" value="([^"]+)"', page.text)
+        assert match is not None
+        response = session_only.post(
+            "/logout", data={CSRF_FORM_FIELD: match.group(1)}
+        )
+        assert response.status_code == 303
+        assert response.headers["location"] == "/login"
+
+    def test_sign_out_ui_uses_post_form(self, admin_client):
+        page = admin_client.get("/admin")
+        assert page.status_code == 200
+        body = page.text
+        assert 'href="/logout"' not in body
+        assert 'action="/logout"' in body
+        assert 'name="csrf_token"' in body
+
     def test_logout_clears_the_session(self, admin_client):
         assert admin_client.get("/api/charts/school.kpis").status_code == 200
-        admin_client.get("/logout")
+        admin_client.post("/logout")
         assert admin_client.get("/api/charts/school.kpis").status_code == 401
 
     def test_session_cookie_is_http_only_and_same_site(self, anon_client, db):
@@ -455,7 +570,7 @@ class TestSessionLifecycle:
         original = settings.session_cookie_secure
         settings.session_cookie_secure = True
         try:
-            header = admin_client.get("/logout").headers["set-cookie"].lower()
+            header = admin_client.post("/logout").headers["set-cookie"].lower()
         finally:
             settings.session_cookie_secure = original
 

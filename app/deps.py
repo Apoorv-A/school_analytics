@@ -36,6 +36,29 @@ class NotAuthenticatedError(Exception):
     """Raised when a request has no usable session. Handled app-wide in main.py."""
 
 
+PORTAL_ACCESS_DETAIL = "Your role does not have access to this portal."
+
+
+class WrongPortalRedirect(Exception):
+    """Signed-in user opened another role's portal in the browser."""
+
+    def __init__(self, location: str) -> None:
+        self.location = location
+
+
+def request_wants_json(request: Request) -> bool:
+    """True when the caller expects a JSON body rather than an HTML page."""
+    if request.url.path.startswith(("/api/", "/export/")):
+        return True
+    accept = request.headers.get("accept", "")
+    if not accept or accept == "*/*":
+        return False
+    lowered = accept.lower()
+    if "text/html" in lowered or "application/xhtml+xml" in lowered:
+        return False
+    return "application/json" in lowered
+
+
 def get_current_user(
     request: Request, db: Session = Depends(get_db)
 ) -> User:
@@ -55,6 +78,9 @@ def get_current_user(
     # A role change since the cookie was issued invalidates the session.
     if payload.get("role") != user.role.value:
         raise NotAuthenticatedError
+    token_sv = payload.get("sv", 1)
+    if not isinstance(token_sv, int) or token_sv != user.session_version:
+        raise NotAuthenticatedError
     return user
 
 
@@ -69,13 +95,19 @@ def require_roles(*roles: Role):
     """Dependency factory restricting a route to the given roles."""
     allowed = frozenset(roles)
 
-    def _guard(user: User = Depends(get_current_user)) -> User:
-        if user.role not in allowed:
+    def _guard(
+        request: Request, user: User = Depends(get_current_user)
+    ) -> User:
+        if user.role in allowed:
+            return user
+        if request_wants_json(request):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Your role does not have access to this portal.",
+                detail=PORTAL_ACCESS_DETAIL,
             )
-        return user
+        from app.portals import PORTAL_HOME
+
+        raise WrongPortalRedirect(PORTAL_HOME[user.role])
 
     return _guard
 
@@ -133,6 +165,17 @@ class AccessScope:
 
     def assert_subject(self, subject_id: int | None) -> int | None:
         return self._check(self.subject_ids, subject_id, "Subject")
+
+    def assert_section_subject(self, section_id: int, subject_id: int | None) -> None:
+        """Require the teacher's assignment to cover this section and subject pair."""
+        if subject_id is None or self.section_subjects is None:
+            return
+        allowed = self.section_subjects.get(section_id, frozenset())
+        if subject_id not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Subject not found.",
+            )
 
     def narrow(self, filters: FilterParams, db: Session | None = None) -> FilterParams:
         """Validate a filter set against this scope and pin it to the resolved year."""

@@ -1,3 +1,9 @@
+{{- if not .Values.image.tag }}
+{{- fail "image.tag must be set to an explicit version at deploy time" }}
+{{- end }}
+{{- if eq .Values.image.tag "latest" }}
+{{- fail "image.tag must not be 'latest'; pin a released semver" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,13 +18,40 @@ spec:
       labels:
         app: {{ .Release.Name }}
     spec:
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      {{- if .Values.tmpVolume.enabled }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            {{- if .Values.tmpVolume.sizeLimit }}
+            sizeLimit: {{ .Values.tmpVolume.sizeLimit }}
+            {{- end }}
+      {{- end }}
       containers:
         - name: api
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - containerPort: 8000
+          {{- if .Values.tmpVolume.enabled }}
+          volumeMounts:
+            - name: tmp
+              mountPath: {{ .Values.tmpVolume.mountPath }}
+          {{- end }}
           env:
+            - name: TMPDIR
+              value: {{ .Values.tmpVolume.mountPath | quote }}
+            - name: DEBUG
+              value: "false"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -29,9 +62,40 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secretName }}
                   key: secret-key
+            - name: ERP_WEBHOOK_REPLAY_BACKEND
+              value: {{ .Values.erpWebhookReplay.backend | quote }}
+            {{- if .Values.erpWebhookReplay.redisUrl }}
+            - name: ERP_WEBHOOK_REPLAY_REDIS_URL
+              value: {{ .Values.erpWebhookReplay.redisUrl | quote }}
+            {{- else }}
+            - name: ERP_WEBHOOK_REPLAY_REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: {{ .Values.erpWebhookReplay.redisUrlSecretKey }}
+            {{- end }}
+            - name: LOGIN_THROTTLE_BACKEND
+              value: {{ .Values.loginThrottle.backend | quote }}
+            {{- if .Values.loginThrottle.redisUrl }}
+            - name: LOGIN_THROTTLE_REDIS_URL
+              value: {{ .Values.loginThrottle.redisUrl | quote }}
+            {{- else }}
+            - name: LOGIN_THROTTLE_REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: {{ .Values.loginThrottle.redisUrlSecretKey }}
+            {{- end }}
+            {{- range .Values.erpWebhookSecrets }}
+            - name: {{ include "school-analytics.secretEnvName" .ref }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secretName }}
+                  key: {{ .secretKey }}
+            {{- end }}
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: 8000
             initialDelaySeconds: 10
             periodSeconds: 10

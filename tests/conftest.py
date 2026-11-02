@@ -23,12 +23,27 @@ os.environ["DEBUG"] = "false"
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
+from app.csrf import CSRF_COOKIE_NAME, CSRF_HEADER  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Role, Section, Student, Teacher, TeacherAssignment, User  # noqa: E402
 from seed.generate import DEMO_PASSWORD, SUNRISE_HOST, generate  # noqa: E402
 
 DEFAULT_HEADERS = {"Host": SUNRISE_HOST}
+
+
+class CsrfTestClient(TestClient):
+    """Test client that echoes the CSRF cookie on unsafe HTTP methods."""
+
+    def request(self, method, url, **kwargs):
+        headers = dict(kwargs.get("headers") or {})
+        if method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+            token = self.cookies.get(CSRF_COOKIE_NAME)
+            if token:
+                headers.setdefault(CSRF_HEADER, token)
+        if headers:
+            kwargs["headers"] = headers
+        return super().request(method, url, **kwargs)
 
 
 def _remove_db_files() -> None:
@@ -52,8 +67,27 @@ def db():
         yield session
 
 
-def _login(email: str) -> TestClient:
-    client = TestClient(app, headers=DEFAULT_HEADERS, follow_redirects=False)
+@pytest.fixture(autouse=True)
+def _restore_sunrise_family_comparison_mode(db):
+    """Tests may switch tenant portal policy; reset so later suites stay deterministic."""
+    yield
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from app.models import Tenant
+
+    tenant = db.scalars(select(Tenant).where(Tenant.key == "sunrise")).one()
+    settings = dict(tenant.settings_json or {})
+    portal = dict(settings.get("portal") or {})
+    if portal.get("familyComparisonMode", "self") != "self":
+        portal["familyComparisonMode"] = "self"
+        settings["portal"] = portal
+        tenant.settings_json = settings
+        flag_modified(tenant, "settings_json")
+        db.commit()
+
+
+def _login(email: str) -> CsrfTestClient:
+    client = CsrfTestClient(app, headers=DEFAULT_HEADERS, follow_redirects=False)
     response = client.post(
         "/login", data={"email": email, "password": DEMO_PASSWORD}
     )
@@ -74,8 +108,8 @@ def _first_email(db, role: Role) -> str:
 
 
 @pytest.fixture
-def anon_client() -> TestClient:
-    return TestClient(app, headers=DEFAULT_HEADERS, follow_redirects=False)
+def anon_client() -> CsrfTestClient:
+    return CsrfTestClient(app, headers=DEFAULT_HEADERS, follow_redirects=False)
 
 
 @pytest.fixture
@@ -150,8 +184,19 @@ def parent_context(db) -> dict:
 
 @pytest.fixture
 def student_context(db) -> dict:
+    from app.models import Tenant
+
+    tenant = db.scalars(select(Tenant).where(Tenant.key == "sunrise")).one()
     record = db.scalars(
-        select(Student).where(Student.user_id.is_not(None)).order_by(Student.id).limit(1)
+        select(Student)
+        .join(User, Student.user_id == User.id)
+        .where(
+            User.role == Role.STUDENT,
+            Student.tenant_id == tenant.id,
+            User.email.like("%@student.sunrise.edu"),
+        )
+        .order_by(Student.id)
+        .limit(1)
     ).one()
     user = db.get(User, record.user_id)
     other = db.scalars(

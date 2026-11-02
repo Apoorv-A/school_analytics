@@ -44,7 +44,7 @@
           <div class="who__role">{{ current_user.email }}</div>
         </div>
       </div>
-      <a class="btn btn--block" href="/logout">Sign out</a>
+      {% include "components/_logout_form.html" %}
     </div>
   </aside>
 
@@ -75,6 +75,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+<script src="/static/js/csrf.js"></script>
 <script src="/static/js/filters.js"></script>
 <script src="/static/js/charts.js"></script>
 </body>

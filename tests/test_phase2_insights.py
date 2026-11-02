@@ -27,11 +27,11 @@ class TestParentInsightSummary:
             "/api/charts/student.insights",
             params={"student_id": child_id},
         )
-        assert blocked.status_code == 403
+        assert blocked.status_code == 404
 
 
 class TestErpWebhook:
-    def test_webhook_requires_token(self, anon_client, db):
+    def test_webhook_requires_signed_request(self, anon_client, db):
         from tests.test_import_apply import _enable_bulk_import
 
         _enable_bulk_import(db)
@@ -42,12 +42,13 @@ class TestErpWebhook:
         )
         assert response.status_code == 401
 
-    def test_webhook_applies_with_valid_token(self, anon_client, db):
-        from tests.test_import_apply import _enable_bulk_import, _set_erp_webhook_token
+    def test_webhook_applies_with_valid_signature(self, anon_client, db, monkeypatch):
+        from tests.test_erp_webhook import _post_signed_webhook
+        from tests.test_import_apply import _enable_bulk_import, _set_erp_webhook_secret
 
         _enable_bulk_import(db)
-        token = "test-webhook-token"
-        _set_erp_webhook_token(db, token)
+        signing_key = "test-webhook-token"
+        _set_erp_webhook_secret(db, signing_key, monkeypatch=monkeypatch)
 
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
@@ -56,44 +57,13 @@ class TestErpWebhook:
                 "email,full_name,role\n"
                 "webhook.user@example.com,Webhook User,teacher\n",
             )
-        buffer.seek(0)
 
-        response = anon_client.post(
-            "/api/erp/import",
-            headers={"Authorization": f"Bearer {token}"},
-            files={"file": ("bundle.zip", buffer.getvalue(), "application/zip")},
+        response = _post_signed_webhook(
+            anon_client,
+            signing_key=signing_key,
+            filename="bundle.zip",
+            content=buffer.getvalue(),
+            content_type="application/zip",
         )
         assert response.status_code == 200
         assert response.json()["applied"] is True
-
-    def test_webhook_rejects_global_token_without_tenant_secret(
-        self, anon_client, db, monkeypatch
-    ):
-        from app.config import get_settings
-        from tests.test_import_apply import _enable_bulk_import
-
-        _enable_bulk_import(db)
-        monkeypatch.setenv("DEBUG", "true")
-        monkeypatch.setenv("ERP_WEBHOOK_TOKEN", "global-only-token")
-        get_settings.cache_clear()
-
-        response = anon_client.post(
-            "/api/erp/import",
-            headers={"Authorization": "Bearer global-only-token"},
-            files={"file": ("scores.csv", b"admission_no\n", "text/csv")},
-        )
-        get_settings.cache_clear()
-        assert response.status_code == 401
-
-    def test_webhook_rejects_wrong_tenant_token(self, anon_client, db):
-        from tests.test_import_apply import _enable_bulk_import, _set_erp_webhook_token
-
-        _enable_bulk_import(db)
-        _set_erp_webhook_token(db, "correct-token")
-
-        response = anon_client.post(
-            "/api/erp/import",
-            headers={"Authorization": "Bearer wrong-token"},
-            files={"file": ("scores.csv", b"admission_no\n", "text/csv")},
-        )
-        assert response.status_code == 401

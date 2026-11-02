@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import Callable
+from contextlib import contextmanager
 
-from sqlalchemy import select
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session, sessionmaker
 
-from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Role, School, Tenant, TenantDomain, User
 from app.security import hash_password
@@ -33,18 +35,31 @@ def _bootstrap_admin(
     )
 
 
+@contextmanager
+def _operator_session(database_url: str | None):
+    """Open a session against the requested database, not the import-time default."""
+    if database_url is None:
+        with SessionLocal() as db:
+            yield db
+        return
+
+    engine = create_engine(database_url, future=True)
+    factory: Callable[[], Session] = sessionmaker(
+        bind=engine, autoflush=False, expire_on_commit=False
+    )
+    with factory() as db:
+        yield db
+    engine.dispose()
+
+
 def reconcile_tenant(
     doc: TenantConfigDocument, database_url: str | None = None
 ) -> dict[str, str]:
-    if database_url is not None:
-        os.environ["DATABASE_URL"] = database_url
-        get_settings.cache_clear()
-
     bootstrap_email = os.environ.get("BOOTSTRAP_ADMIN_EMAIL", "").strip()
     bootstrap_password = os.environ.get("BOOTSTRAP_ADMIN_PASSWORD", "").strip()
     bootstrap_name = os.environ.get("BOOTSTRAP_ADMIN_NAME", "School Administrator").strip()
 
-    with SessionLocal() as db:
+    with _operator_session(database_url) as db:
         tenant = db.scalars(
             select(Tenant).where(Tenant.key == doc.tenant.key)
         ).first()
@@ -64,7 +79,13 @@ def reconcile_tenant(
         tenant.settings_json = {
             "academics": doc.academics.model_dump(),
             "features": doc.features.model_dump(),
+            "portal": doc.portal.model_dump(),
+            "attendance": doc.attendance.model_dump(),
             "auth": doc.auth.model_dump(),
+            "erp": {
+                "webhookSecretRef": doc.erp.webhookSecretRef,
+                "webhookSigningSecretRef": doc.erp.webhookSigningSecretRef,
+            },
         }
 
         domain = db.scalars(

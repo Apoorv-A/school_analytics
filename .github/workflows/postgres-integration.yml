@@ -1,0 +1,41 @@
+name: postgres-integration
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: school
+          POSTGRES_PASSWORD: school
+          POSTGRES_DB: school_analytics
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U school -d school_analytics"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt 'psycopg[binary]'
+
+      - name: Postgres integration tests
+        run: PYTHONPATH=. pytest -q -m postgres
+        env:
+          SECRET_KEY: ci-test-secret
+          POSTGRES_TEST_DATABASE_URL: postgresql+psycopg://school:school@localhost:5432/school_analytics

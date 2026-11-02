@@ -1,7 +1,21 @@
 replicaCount: 1
 
+# Allow in-flight requests to finish before SIGKILL after SIGTERM.
+terminationGracePeriodSeconds: 30
+
+# Writable /tmp for tempfile uploads and Python runtime (readOnlyRootFilesystem).
+tmpVolume:
+  enabled: true
+  mountPath: /tmp
+  sizeLimit: 256Mi
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
 image:
   repository: ghcr.io/apoorv-a/school-analytics
+  # Set by deploy.yml via --set-string image.tag=<semver>; never use "latest".
   tag: ""
   pullPolicy: IfNotPresent
 
@@ -13,9 +27,48 @@ ingress:
   hosts: []
 
 database:
+  # Runtime application role (DML only; subject to RLS). Stored in secret key database-url.
   url: ""
 
 secretName: school-analytics-secrets
+
+# Optional ERP webhook secret references injected as SA_SECRET_<REF> env vars.
+# Each entry maps a tenant config ref (erp.webhookSecretRef) to a key in secretName.
+# Example:
+# erpWebhookSecrets:
+#   - ref: sunrise/erp-webhook
+#     secretKey: erp-webhook-sunrise
+erpWebhookSecrets: []
+
+# Shared Redis nonce store for ERP webhook replay protection (required in production).
+erpWebhookReplay:
+  backend: redis
+  # When empty, deployment reads ERP_WEBHOOK_REPLAY_REDIS_URL from secretName key below.
+  redisUrl: ""
+  redisUrlSecretKey: erp-webhook-replay-redis-url
+
+# Shared Redis store for login throttling (required in production multi-replica).
+loginThrottle:
+  backend: redis
+  # When empty, deployment reads LOGIN_THROTTLE_REDIS_URL from secretName key below.
+  redisUrl: ""
+  redisUrlSecretKey: login-throttle-redis-url
+
+# Pre-install/pre-upgrade Helm hook: ``alembic upgrade head`` before pods become ready.
+# Use owner/migrator credentials (DDL + RLS policy creation), not the runtime app role.
+migrations:
+  enabled: true
+  # Secret key for the migrator DATABASE_URL (owner role). Runtime pods use database-url.
+  databaseUrlSecretKey: database-migrate-url
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
 operator:
   enabled: true

@@ -19,6 +19,7 @@ from app.models import AssessmentType, Role, School, Student
 from app.schemas import FilterOptions, FilterParams
 from app.templating import templates
 from app.tenant.context import require_tenant_context
+from app.tenant.settings import TenantSettings
 
 PORTAL_HOME: dict[Role, str] = {
     Role.ADMIN: "/admin",
@@ -63,6 +64,7 @@ NAV: dict[Role, list[dict]] = {
                 {"href": "/teacher/subjects", "label": "Subjects", "icon": "\u25c6"},
                 {"href": "/teacher/students", "label": "Students", "icon": "\u25cf"},
                 {"href": "/teacher/attention", "label": "Needs attention", "icon": "\u26a0"},
+                {"href": "/teacher/interventions", "label": "Interventions", "icon": "\u2691"},
                 {"href": "/teacher/attendance", "label": "Attendance", "icon": "\u2713"},
             ],
         }
@@ -81,6 +83,7 @@ NAV: dict[Role, list[dict]] = {
             "title": "People",
             "items": [
                 {"href": "/admin/attention", "label": "Students at risk", "icon": "\u26a0"},
+                {"href": "/admin/interventions", "label": "Interventions", "icon": "\u2691"},
                 {"href": "/admin/teachers", "label": "Teaching outcomes", "icon": "\u25cf"},
                 {"href": "/admin/student", "label": "Student lookup", "icon": "\u2315"},
                 {"href": "/admin/import", "label": "Data import", "icon": "\u2191"},
@@ -88,6 +91,27 @@ NAV: dict[Role, list[dict]] = {
         },
     ],
 }
+
+
+def portal_nav(role: Role, settings: TenantSettings) -> list[dict]:
+    """Navigation groups with feature-flagged items removed."""
+    groups: list[dict] = []
+    for group in NAV[role]:
+        items = []
+        for item in group["items"]:
+            href = item["href"]
+            if href == "/admin/import" and not settings.bulk_import_enabled:
+                continue
+            if href in ("/admin/interventions", "/teacher/interventions"):
+                if not settings.interventions_enabled:
+                    continue
+            if href in ("/parent/remarks", "/student/remarks"):
+                if not settings.remarks_enabled:
+                    continue
+            items.append(item)
+        if items:
+            groups.append({**group, "items": items})
+    return groups
 
 
 # Each filter-bar control and the FilterParams fields it lets the user edit.
@@ -206,6 +230,7 @@ def render_dashboard(
     behalf, so they still reach the chart API when the page draws no control for
     them.
     """
+    tenant_ctx = require_tenant_context()
     options = queries.filter_options(db, scope)
     filters = _normalize_filter_controls(filters)
     rendered_filters = _rendered_filters(visible_filters, options)
@@ -224,8 +249,9 @@ def render_dashboard(
         "current_user": scope.user,
         "scope": scope,
         "school": _school(db),
-        "nav_groups": NAV[scope.role],
+        "nav_groups": portal_nav(scope.role, tenant_ctx.settings),
         "portal_home": PORTAL_HOME[scope.role],
+        "exports_enabled": tenant_ctx.settings.exports_enabled,
     }
     if extra:
         context.update(extra)

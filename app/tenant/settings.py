@@ -17,9 +17,15 @@ class TenantSettings:
     parent_portal_enabled: bool = True
     student_portal_enabled: bool = True
     bulk_import_enabled: bool = False
-    erp_webhook_token: str = ""
+    interventions_enabled: bool = False
+    family_comparison_mode: str = "self"
+    attendance_count_late_as_present: bool = True
+    attendance_count_excused_as_present: bool = False
+    erp_webhook_secret_ref: str = ""
+    erp_webhook_signing_secret_ref: str = ""
     session_max_age: int = 8 * 60 * 60
-    mfa_required_roles: frozenset[str] = frozenset({"admin", "teacher"})
+    mfa_enabled: bool = False
+    mfa_required_roles: frozenset[str] = frozenset()
 
     @classmethod
     def from_json(cls, payload: dict | None) -> TenantSettings:
@@ -29,7 +35,12 @@ class TenantSettings:
         erp = payload.get("erp") or {}
         features = payload.get("features") or {}
         academics = payload.get("academics") or {}
-        mfa_roles = auth.get("mfaRequiredRoles") or ["admin", "teacher"]
+        portal = payload.get("portal") or {}
+        attendance = payload.get("attendance") or {}
+        mfa_enabled = bool(auth.get("mfaEnabled", False))
+        mfa_roles = auth.get("mfaRequiredRoles") or []
+        if not mfa_enabled:
+            mfa_roles = []
         return cls(
             pass_percentage=float(academics.get("passPercentage", 33.0)),
             at_risk_percentage=float(academics.get("atRiskPercentage", 45.0)),
@@ -39,7 +50,17 @@ class TenantSettings:
             parent_portal_enabled=bool(features.get("parentPortal", True)),
             student_portal_enabled=bool(features.get("studentPortal", True)),
             bulk_import_enabled=bool(features.get("bulkImport", False)),
-            erp_webhook_token=str(erp.get("webhookToken") or ""),
+            interventions_enabled=bool(features.get("interventions", False)),
+            family_comparison_mode=str(portal.get("familyComparisonMode", "self")),
+            attendance_count_late_as_present=bool(
+                attendance.get("countLateAsPresent", True)
+            ),
+            attendance_count_excused_as_present=bool(
+                attendance.get("countExcusedAsPresent", False)
+            ),
+            erp_webhook_secret_ref=str(erp.get("webhookSecretRef") or ""),
+            erp_webhook_signing_secret_ref=str(erp.get("webhookSigningSecretRef") or ""),
             session_max_age=int(auth.get("sessionMaxAge", 8 * 60 * 60)),
+            mfa_enabled=mfa_enabled,
             mfa_required_roles=frozenset(str(r) for r in mfa_roles),
         )

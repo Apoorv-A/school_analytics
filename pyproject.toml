@@ -1,6 +1,6 @@
 [project]
 name = "school-analytics"
-version = "1.0.0"
+version = "1.2.0"
 description = "Multi-portal analytics platform for schools: parents, students, teachers, and leadership"
 requires-python = ">=3.11"
 
@@ -31,13 +31,18 @@ ignore = [
 "tests/*" = [
     "S101",   # assert is how pytest works
     "S105",   # test fixtures reference placeholder passwords
+    "S106",   # kwargs named *secret_ref are refs, not literal secrets
+    "S107",   # default secret_ref paths in test helpers are not real credentials
     "E501",
 ]
 "seed/*" = [
     "S311",   # the seeder wants reproducible pseudo-random data, not crypto randomness
 ]
-"scripts/*" = ["S101", "T201"]
+"scripts/*" = ["S101", "S603", "S608", "T201"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    "postgres: requires POSTGRES_TEST_DATABASE_URL and a running PostgreSQL server",
+]

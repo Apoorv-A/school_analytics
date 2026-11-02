@@ -41,6 +41,54 @@
         <div class="alert alert--error" style="margin-bottom:18px" role="alert">{{ error }}</div>
       {% endif %}
 
+      {% if mfa_step %}
+        <form method="post" action="/login" autocomplete="off">
+          <div class="field">
+            <label for="mfa_code">Authentication code</label>
+            <input id="mfa_code" name="mfa_code" type="text" inputmode="numeric"
+                   pattern="[0-9]{6}" maxlength="6" required autofocus
+                   placeholder="6-digit code">
+          </div>
+          <button type="submit" class="btn btn--primary btn--block">Verify</button>
+        </form>
+        <p class="muted" style="margin-top:14px;font-size:12px">
+          Open your authenticator app and enter the current code for this account.
+          <a href="/login?recovery=1">Use a recovery code instead</a>
+        </p>
+      {% elif recovery_step %}
+        <form method="post" action="/login/mfa/recovery" autocomplete="off">
+          <div class="field">
+            <label for="recovery_code">Recovery code</label>
+            <input id="recovery_code" name="recovery_code" type="text"
+                   autocomplete="off" required autofocus
+                   placeholder="XXXX-XXXX">
+          </div>
+          <button type="submit" class="btn btn--primary btn--block">Sign in with recovery code</button>
+        </form>
+        <p class="muted" style="margin-top:14px;font-size:12px">
+          Each recovery code works once. After signing in, generate new codes in your account settings.
+          <a href="/login">Back to authenticator code</a>
+        </p>
+      {% elif enrolment_step %}
+        <p style="margin-bottom:16px">
+          Scan this key into your authenticator app, then enter the code it generates to finish setup.
+        </p>
+        {% if manual_secret %}
+          <p><strong>Manual entry key:</strong> <code>{{ manual_secret }}</code></p>
+        {% endif %}
+        {% if provisioning_uri %}
+          <p class="muted" style="font-size:11.5px;word-break:break-all">{{ provisioning_uri }}</p>
+        {% endif %}
+        <form method="post" action="/login" autocomplete="off" style="margin-top:18px">
+          <div class="field">
+            <label for="enrol_confirm_code">Confirm with code</label>
+            <input id="enrol_confirm_code" name="enrol_confirm_code" type="text"
+                   inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus
+                   placeholder="6-digit code">
+          </div>
+          <button type="submit" class="btn btn--primary btn--block">Enable MFA and sign in</button>
+        </form>
+      {% else %}
       <form method="post" action="/login" autocomplete="on">
         <div class="field">
           <label for="email">Email address</label>
@@ -54,6 +102,10 @@
         </div>
         <button type="submit" class="btn btn--primary btn--block">Sign in</button>
       </form>
+      <p class="muted" style="margin-top:14px;font-size:13px;text-align:center">
+        <a href="/forgot-password">Forgot password?</a>
+      </p>
+      {% endif %}
 
       {% if demo_accounts %}
         <div class="demo-accounts">

@@ -1,5 +1,6 @@
 name: preflight
 
+# SQLite suite only. PostgreSQL migrations/RLS run in postgres-integration.yml.
 on:
   pull_request:
   push:
@@ -16,7 +17,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt alembic pyyaml
+        run: pip install -r requirements.lock
 
       - name: Ruff
         run: pip install ruff && ruff check app seed tests tenant_config tenant_operator scripts

@@ -12,7 +12,10 @@ from app.db import Base
 from app import models  # noqa: F401
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Honour ``Config.set_main_option`` / ``-x sqlalchemy.url=`` overrides (tests, jobs).
+_configured_url = config.get_main_option("sqlalchemy.url")
+if not _configured_url or _configured_url == "driver://user:pass@localhost/dbname":
+    config.set_main_option("sqlalchemy.url", settings.database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

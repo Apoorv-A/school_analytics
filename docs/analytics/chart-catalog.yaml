@@ -215,3 +215,21 @@ charts:
   kind: table
   roles:
   - admin
+- key: staff.intervention_uncovered
+  title: Flagged pupils with no plan
+  kind: table
+  roles:
+  - admin
+  - teacher
+- key: staff.interventions_open
+  title: Open intervention cases
+  kind: table
+  roles:
+  - admin
+  - teacher
+- key: staff.intervention_outcomes
+  title: Closed intervention outcomes
+  kind: table
+  roles:
+  - admin
+  - teacher

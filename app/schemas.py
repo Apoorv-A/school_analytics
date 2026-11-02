@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import HTTPException, Query
 from pydantic import (
@@ -15,7 +15,14 @@ from pydantic import (
     model_validator,
 )
 
-from app.models import AssessmentType, RemarkCategory
+from app.models import (
+    ActionTaskStatus,
+    ActionTaskVisibility,
+    AssessmentType,
+    InterventionPriority,
+    RemarkCategory,
+    Role,
+)
 
 _MAX_SUBJECT_FILTERS = 5
 _MAX_SECTION_FILTERS = 4
@@ -35,6 +42,108 @@ class LoginForm(BaseModel):
 
     email: EmailStr
     password: str = Field(min_length=1, max_length=256)
+
+
+class MfaVerifyForm(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class MfaEnrolConfirmForm(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class MfaVerifyRequest(MfaVerifyForm):
+    mfaToken: str | None = None
+
+
+class MfaEnrolStartRequest(BaseModel):
+    enrolmentToken: str | None = None
+
+
+class MfaEnrolConfirmRequest(MfaEnrolConfirmForm):
+    enrolmentToken: str | None = None
+
+
+class MfaRecoveryCodesRequest(BaseModel):
+    """Strong authentication before generating new recovery codes."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    password: str | None = Field(default=None, max_length=256)
+    totpCode: str | None = Field(
+        default=None, min_length=6, max_length=6, pattern=r"^\d{6}$"
+    )
+
+    @model_validator(mode="after")
+    def require_reauth(self) -> MfaRecoveryCodesRequest:
+        if not self.password and not self.totpCode:
+            raise ValueError("Current password or TOTP code is required.")
+        return self
+
+
+class MfaRecoveryLoginForm(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    recoveryCode: str = Field(min_length=8, max_length=12, pattern=r"^[0-9A-Fa-f-]+$")
+
+
+class MfaRecoveryLoginRequest(MfaRecoveryLoginForm):
+    mfaToken: str | None = None
+
+
+class ForgotPasswordForm(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    email: EmailStr
+
+
+class ResetPasswordForm(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    token: str = Field(min_length=16, max_length=128)
+    password: str = Field(min_length=8, max_length=256)
+    confirm_password: str = Field(min_length=8, max_length=256)
+
+    @model_validator(mode="after")
+    def passwords_match(self) -> ResetPasswordForm:
+        if self.password != self.confirm_password:
+            raise ValueError("Passwords do not match.")
+        return self
+
+
+class AdminInviteUserRequest(BaseModel):
+    """Admin invitation for a new portal user."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    email: EmailStr
+    full_name: str = Field(min_length=1, max_length=160)
+    role: Role
+
+    @field_validator("role")
+    @classmethod
+    def role_must_be_invitable(cls, value: Role) -> Role:
+        if value == Role.ADMIN:
+            raise ValueError("Admin users cannot be invited via this endpoint.")
+        return value
+
+
+class ChangePasswordForm(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    current_password: str = Field(min_length=1, max_length=256)
+    password: str = Field(min_length=8, max_length=256)
+    confirm_password: str = Field(min_length=8, max_length=256)
+
+    @model_validator(mode="after")
+    def passwords_match(self) -> ChangePasswordForm:
+        if self.password != self.confirm_password:
+            raise ValueError("Passwords do not match.")
+        return self
 
 
 class FilterParams(BaseModel):
@@ -155,6 +264,43 @@ class StudentSearchResult(BaseModel):
     label: str
     admission_no: str
     section_label: str
+
+
+class ActionTaskCreate(BaseModel):
+    """New follow-up task on an intervention case."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=4000)
+    assigned_to_user_id: int | None = Field(default=None, ge=_MIN_ID, le=_MAX_ID)
+    visibility: ActionTaskVisibility = ActionTaskVisibility.STAFF
+    priority: InterventionPriority = InterventionPriority.MEDIUM
+    due_at: datetime | None = None
+
+
+class ActionTaskUpdate(BaseModel):
+    """Partial update for an intervention case task."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=4000)
+    assigned_to_user_id: int | None = Field(default=None, ge=_MIN_ID, le=_MAX_ID)
+    visibility: ActionTaskVisibility | None = None
+    status: ActionTaskStatus | None = None
+    priority: InterventionPriority | None = None
+    due_at: datetime | None = None
+    clear_assignee: bool = False
+    clear_due_at: bool = False
+
+
+class ActionTaskComplete(BaseModel):
+    """Mark a task completed with an optional note."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    completion_note: str | None = Field(default=None, max_length=4000)
 
 
 class RemarkCreate(BaseModel):

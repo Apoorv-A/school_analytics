@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+import os
 import secrets
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -30,8 +31,18 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./school.db"
 
     session_cookie_name: str = "sa_session"
-    session_cookie_secure: bool = False
+    mfa_pending_cookie_name: str = "sa_mfa_pending"
+    mfa_enrol_cookie_name: str = "sa_mfa_enrol"
+    session_cookie_secure: bool | None = None
     session_max_age: int = Field(default=8 * 60 * 60, ge=300, le=30 * 24 * 60 * 60)
+    password_reset_token_max_age: int = Field(
+        default=3600, ge=300, le=7 * 24 * 60 * 60
+    )
+    login_throttle_backend: str = "memory"
+    login_throttle_redis_url: str = ""
+    trusted_proxy: bool = False
+    erp_webhook_replay_backend: str = "memory"
+    erp_webhook_replay_redis_url: str = ""
 
     # When on, the login page lists the seeded demo accounts and can prefill them.
     # Intended for local evaluation only; leave off anywhere real users exist.
@@ -54,6 +65,16 @@ class Settings(BaseSettings):
             "Sessions will not survive a restart. Set SECRET_KEY in .env."
         )
         return secrets.token_urlsafe(48)
+
+    @model_validator(mode="after")
+    def _production_security_defaults(self) -> Settings:
+        if self.session_cookie_secure is None:
+            self.session_cookie_secure = not self.debug
+        if not self.debug and not os.environ.get("SECRET_KEY", "").strip():
+            raise ValueError(
+                "SECRET_KEY must be set when DEBUG is false (production mode)."
+            )
+        return self
 
     @property
     def templates_dir(self) -> Path:
