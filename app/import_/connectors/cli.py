@@ -27,14 +27,14 @@ def main() -> int:
 
     sync_parser = sub.add_parser(
         "sync",
-        help="Run one connector sync cycle (local drop directory is supported today)",
+        help="Run one connector sync cycle (local and SFTP supported)",
     )
     sync_parser.add_argument("--tenant-id", required=True)
     sync_parser.add_argument(
         "--kind",
         required=True,
         choices=[k.value for k in ConnectorKind],
-        help="Connector transport (sftp/rest are stubs)",
+        help="Connector transport (rest polling is not yet implemented)",
     )
     sync_parser.add_argument(
         "--dir",
@@ -45,12 +45,27 @@ def main() -> int:
     sync_parser.add_argument(
         "--sftp-host-secret-ref",
         default="",
-        help="Deployment secret ref for SFTP host (stub)",
+        help="Secret ref for SFTP host (optional :port); resolves SA_SECRET_<REF>",
     )
     sync_parser.add_argument(
         "--sftp-path-secret-ref",
         default="",
-        help="Deployment secret ref for SFTP remote path (stub)",
+        help="Secret ref for SFTP remote directory (absolute path)",
+    )
+    sync_parser.add_argument(
+        "--sftp-user-secret-ref",
+        default="",
+        help="Secret ref for SFTP username",
+    )
+    sync_parser.add_argument(
+        "--sftp-password-secret-ref",
+        default="",
+        help="Secret ref for SFTP password (omit when using private key)",
+    )
+    sync_parser.add_argument(
+        "--sftp-private-key-secret-ref",
+        default="",
+        help="Secret ref for SFTP private key PEM (optional alternative to password)",
     )
     sync_parser.add_argument(
         "--rest-base-url-secret-ref",
@@ -69,6 +84,9 @@ def main() -> int:
             local_dir=args.dir,
             sftp_host_secret_ref=args.sftp_host_secret_ref,
             sftp_path_secret_ref=args.sftp_path_secret_ref,
+            sftp_user_secret_ref=args.sftp_user_secret_ref,
+            sftp_password_secret_ref=args.sftp_password_secret_ref,
+            sftp_private_key_secret_ref=args.sftp_private_key_secret_ref,
             rest_base_url_secret_ref=args.rest_base_url_secret_ref,
         )
     except ConnectorConfigError as exc:

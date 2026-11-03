@@ -21,7 +21,7 @@ Canonical documentation for the Python multi-tenant school analytics platform.
 | [operations/backup-restore.md](operations/backup-restore.md) | Backup, restore, and RPO/RTO targets |
 | [operations/supply-chain.md](operations/supply-chain.md) | Locked dependencies, pip-audit, SBOM |
 | [operations/erp-webhook-smoke.md](operations/erp-webhook-smoke.md) | Signed ERP import webhook smoke test |
-| [operations/erp-connector-sync.md](operations/erp-connector-sync.md) | Scheduled ERP CSV sync (local drop; SFTP/REST stubs) |
+| [operations/erp-connector-sync.md](operations/erp-connector-sync.md) | Scheduled ERP CSV sync (local drop, SFTP pull) |
 | [operations/production-support-matrix.md](operations/production-support-matrix.md) | Supported versions, MFA, escalation, exclusions |
 | [onboarding/school-intake-checklist.md](onboarding/school-intake-checklist.md) | CSV templates, validate/apply, bootstrap admin |
 | [product/erp-strategy.md](product/erp-strategy.md) | ERP coexistence and ingest roadmap |

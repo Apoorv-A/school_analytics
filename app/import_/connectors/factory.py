@@ -18,6 +18,9 @@ def build_connector(
     local_dir: Path | None = None,
     sftp_host_secret_ref: str = "",
     sftp_path_secret_ref: str = "",
+    sftp_user_secret_ref: str = "",
+    sftp_password_secret_ref: str = "",
+    sftp_private_key_secret_ref: str = "",
     rest_base_url_secret_ref: str = "",
 ) -> ImportConnector:
     if kind == ConnectorKind.LOCAL:
@@ -27,11 +30,17 @@ def build_connector(
     if kind == ConnectorKind.SFTP:
         if not sftp_host_secret_ref or not sftp_path_secret_ref:
             raise ConnectorConfigError(
-                "sftp connector requires host and path secret refs (stub only today)"
+                "sftp connector requires --sftp-host-secret-ref and "
+                "--sftp-path-secret-ref"
             )
+        if not sftp_user_secret_ref:
+            raise ConnectorConfigError("sftp connector requires --sftp-user-secret-ref")
         return SftpConnector(
             host_secret_ref=sftp_host_secret_ref,
             path_secret_ref=sftp_path_secret_ref,
+            user_secret_ref=sftp_user_secret_ref,
+            password_secret_ref=sftp_password_secret_ref,
+            private_key_secret_ref=sftp_private_key_secret_ref,
         )
     if kind == ConnectorKind.REST:
         if not rest_base_url_secret_ref:
