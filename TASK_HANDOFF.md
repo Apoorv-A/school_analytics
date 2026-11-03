@@ -49,17 +49,16 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - **Local venv vs CI:** preflight installs `requirements.lock` (includes `fakeredis`). A partial `.venv` misses Redis test deps and fails 6 webhook/throttle tests; run `pip install -r requirements.lock` before `pytest`.
 - **Embedded `config/`:** gitignored mirror of `school-analytics-config` for `tests/test_config_schema.py` and optional QA parity; deploy source remains the sibling repo. Copy `config/tools/promote.sh` → `school-analytics-config/scripts/promote.sh` when promoting locally.
 - **Analytics consent:** not collected in-app; school-as-service model (see `docs/product/phase2.md`). Migration `014` may leave an unused `parental_consent_records` table until a future cleanup revision.
-- **Phase 2 remaining** (see `docs/product/phase2.md`): REST polling connector, delta detection, conflict-resolution UI.
+- **Phase 2 remaining** (see `docs/product/phase2.md`): delta detection, conflict-resolution UI.
 - **Test DB pollution:** stale `tests/test_school.db` (+ `.wal`/`.shm`) can cause flaky failures — remove and re-run pytest.
 - **`assessment_code` auto-create:** needs UT-style codes (e.g. `UT-MATH-6A-T1`); verify when seeding or importing new assessments.
 - **Webhook testing:** each tenant needs `erp.webhookSecretRef` set in config and a matching `SA_SECRET_<REF>` deployment secret before `POST /api/erp/import` will succeed.
 
 ## 6. Exact next step
 
-1. **Implement REST connector fetch** (secret refs only; HTTPS base URL).
-2. **Delta detection and conflict-resolution UI** per `docs/product/phase2.md`.
-3. **ERP webhook smoke** (shipped): `docs/operations/erp-webhook-smoke.md` when tenant `erp.webhookSecretRef` and `SA_SECRET_<REF>` are provisioned.
-4. **Scheduled connector sync** (shipped): `docs/operations/erp-connector-sync.md` — `sync --kind local` or `sync --kind sftp` with `SA_SECRET_<REF>` credentials.
+1. **Delta detection and conflict-resolution UI** per `docs/product/phase2.md`.
+2. **ERP webhook smoke** (shipped): `docs/operations/erp-webhook-smoke.md` when tenant `erp.webhookSecretRef` and `SA_SECRET_<REF>` are provisioned.
+3. **Scheduled connector sync** (shipped): `docs/operations/erp-connector-sync.md` — `sync --kind local`, `sync --kind sftp`, or `sync --kind rest` with `SA_SECRET_<REF>` credentials.
 
 ## 7. Anything the next agent must not change
 

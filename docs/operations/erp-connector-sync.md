@@ -8,7 +8,7 @@ Phase 2 adds a **connector framework** beside webhook ingest (`POST /api/erp/imp
 | --- | --- | --- |
 | `local` | **Supported** — read a mounted directory | `sync:local` |
 | `sftp` | **Supported** — pull `*.csv` from a remote inbox | `sync:sftp` |
-| `rest` | Stub (raises at fetch time) | `sync:rest` |
+| `rest` | **Supported** — GET export URL (zip or single CSV) | `sync:rest` |
 
 Webhook ingest remains the preferred push path when the ERP can POST signed multipart uploads.
 
@@ -63,7 +63,7 @@ The tenant registry column is **`key`** (for example `sunrise`, `horizon`), not 
 
 Exit code `0` when apply succeeds; `1` on validation/apply failure; `2` on connector configuration errors.
 
-Recent runs appear on **Admin → Data import** with source `sync:local` or `sync:sftp`.
+Recent runs appear on **Admin → Data import** with source `sync:local`, `sync:sftp`, or `sync:rest`.
 
 ## SFTP pull (CronJob pattern)
 
@@ -106,9 +106,41 @@ PYTHONPATH=. python -m app.import_.connectors.cli sync \
 
 SFTP host keys are verified (`RejectPolicy`); ensure the job image trusts the server host key or use a known-good hostname/IP in the host secret.
 
-## Planned: REST polling
+## REST polling (CronJob pattern)
 
-REST export polling will resolve a base URL from a deployment secret ref. Until then, use webhook push, SFTP pull, or a local drop directory.
+1. Provision deployment secrets for the **export URL** (full HTTPS URL to poll) and **auth** (bearer token or basic username/password). Refs only in Helm/job args — same `SA_SECRET_<REF>` / `SA_SECRETS_DIR` pattern as SFTP and webhook ingest.
+2. Ensure the ERP responds with either a **zip** containing recognized CSV files or a **single** allowed CSV (`school_structure.csv`, `scores.csv`, etc.) with a matching `Content-Disposition` filename.
+3. TLS certificate verification stays enabled (no SSL bypass). When `DEBUG` is false, the export URL must use **https** and must not point at loopback or private IP literals.
+
+Example secret refs:
+
+| Ref (example) | `SA_SECRET_*` env | Value |
+| --- | --- | --- |
+| `sunrise/erp-rest-export` | `SA_SECRET_SUNRISE_ERP_REST_EXPORT` | `https://erp.vendor.example.com/api/v1/export/latest` |
+| `sunrise/erp-rest-token` | `SA_SECRET_SUNRISE_ERP_REST_TOKEN` | *(bearer token)* |
+
+Bearer auth:
+
+```bash
+PYTHONPATH=. python -m app.import_.connectors.cli sync \
+  --tenant-id="${SUNRISE_TENANT_ID}" \
+  --kind=rest \
+  --rest-base-url-secret-ref=sunrise/erp-rest-export \
+  --rest-bearer-token-secret-ref=sunrise/erp-rest-token
+```
+
+Basic auth (omit `--rest-bearer-token-secret-ref`):
+
+```bash
+PYTHONPATH=. python -m app.import_.connectors.cli sync \
+  --tenant-id="${SUNRISE_TENANT_ID}" \
+  --kind=rest \
+  --rest-base-url-secret-ref=sunrise/erp-rest-export \
+  --rest-basic-user-secret-ref=sunrise/erp-rest-user \
+  --rest-basic-password-secret-ref=sunrise/erp-rest-password
+```
+
+Response size limits match admin upload ingest (5 MB per CSV member, 25 MB response, 50 MB zip decompressed). Redirects are not followed.
 
 ## Related
 

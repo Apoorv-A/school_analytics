@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
+import io
 import stat
+import zipfile
 from pathlib import Path
 
+import httpx
 import pytest
 from sqlalchemy import select
 
 import tests._ensure_paramiko  # noqa: F401 — stub paramiko when not installed locally
-from app.import_.connectors.errors import (
-    ConnectorConfigError,
-    ConnectorFetchError,
-    ConnectorNotImplementedError,
-)
+from app.import_.connectors.errors import ConnectorConfigError, ConnectorFetchError
 from app.import_.connectors.factory import build_connector
 from app.import_.connectors.local import LocalPathConnector
+from app.import_.connectors.rest import RestPollingConnector, _validate_export_url
 from app.import_.connectors.runner import run_connector_sync
 from app.import_.connectors.sftp import (
     SftpConnector,
@@ -190,13 +190,94 @@ class TestSftpConnectorFetch:
                 pass
 
 
-class TestConnectorStubs:
-    def test_rest_not_implemented(self) -> None:
-        connector = build_connector(
-            ConnectorKind.REST,
-            rest_base_url_secret_ref="erp/rest/base",
+def _zip_with_csv(name: str, body: str) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(name, body)
+    return buffer.getvalue()
+
+
+class TestRestConnectorConfig:
+    def test_requires_auth_secret_refs(self) -> None:
+        with pytest.raises(ConnectorConfigError):
+            build_connector(
+                ConnectorKind.REST,
+                rest_base_url_secret_ref="erp/rest/base",
+            )
+
+    def test_rejects_mixed_auth_modes(self) -> None:
+        with pytest.raises(ConnectorConfigError):
+            RestPollingConnector(
+                base_url_secret_ref="erp/rest/base",
+                bearer_token_secret_ref="erp/rest/token",
+                basic_user_secret_ref="erp/rest/user",
+                basic_password_secret_ref="erp/rest/password",
+            )
+
+    def test_production_requires_https(self) -> None:
+        with pytest.raises(ConnectorConfigError):
+            _validate_export_url("http://export.example.com/latest.zip", allow_http=False)
+
+
+class TestRestConnectorFetch:
+    def test_downloads_zip_and_applies(
+        self, db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        url_ref = "erp/rest/export-url"
+        token_ref = "erp/rest/token"
+        export_url = "https://export.example.com/v1/bundle"
+        monkeypatch.setenv(secret_env_name(url_ref), export_url)
+        monkeypatch.setenv(secret_env_name(token_ref), "test-bearer")
+
+        csv_body = (
+            "grade_level,grade_name,section_name,subject_code,subject_name\n"
+            "8,REST Grade,RESTSEC,RESTTEST,REST Test Subject\n"
         )
-        with pytest.raises(ConnectorNotImplementedError):
+        zip_bytes = _zip_with_csv("school_structure.csv", csv_body)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url == httpx.URL(export_url)
+            assert request.headers["authorization"] == "Bearer test-bearer"
+            return httpx.Response(
+                200,
+                content=zip_bytes,
+                headers={"Content-Type": "application/zip"},
+            )
+
+        def client_factory() -> httpx.Client:
+            return httpx.Client(transport=httpx.MockTransport(handler))
+
+        connector = RestPollingConnector(
+            base_url_secret_ref=url_ref,
+            bearer_token_secret_ref=token_ref,
+            client_factory=client_factory,
+        )
+        tenant = db.scalars(select(Tenant).where(Tenant.key == "sunrise")).one()
+        result = run_connector_sync(db, tenant.id, connector)
+        assert result.source == "sync:rest"
+        assert result.applied is True
+
+    def test_http_error_raises_fetch_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        url_ref = "erp/rest/export-url"
+        token_ref = "erp/rest/token"
+        monkeypatch.setenv(
+            secret_env_name(url_ref), "https://export.example.com/v1/bundle"
+        )
+        monkeypatch.setenv(secret_env_name(token_ref), "token")
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(503)
+
+        connector = RestPollingConnector(
+            base_url_secret_ref=url_ref,
+            bearer_token_secret_ref=token_ref,
+            client_factory=lambda: httpx.Client(
+                transport=httpx.MockTransport(handler)
+            ),
+        )
+        with pytest.raises(ConnectorFetchError):
             with connector.materialize_bundle():
                 pass
 

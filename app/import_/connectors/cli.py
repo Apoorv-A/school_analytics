@@ -27,14 +27,14 @@ def main() -> int:
 
     sync_parser = sub.add_parser(
         "sync",
-        help="Run one connector sync cycle (local and SFTP supported)",
+        help="Run one connector sync cycle (local, SFTP, and REST)",
     )
     sync_parser.add_argument("--tenant-id", required=True)
     sync_parser.add_argument(
         "--kind",
         required=True,
         choices=[k.value for k in ConnectorKind],
-        help="Connector transport (rest polling is not yet implemented)",
+        help="Connector transport",
     )
     sync_parser.add_argument(
         "--dir",
@@ -70,7 +70,22 @@ def main() -> int:
     sync_parser.add_argument(
         "--rest-base-url-secret-ref",
         default="",
-        help="Deployment secret ref for REST base URL (stub)",
+        help="Secret ref for REST export URL (https in production); SA_SECRET_<REF>",
+    )
+    sync_parser.add_argument(
+        "--rest-bearer-token-secret-ref",
+        default="",
+        help="Secret ref for REST bearer token (omit when using basic auth)",
+    )
+    sync_parser.add_argument(
+        "--rest-basic-user-secret-ref",
+        default="",
+        help="Secret ref for REST basic auth username",
+    )
+    sync_parser.add_argument(
+        "--rest-basic-password-secret-ref",
+        default="",
+        help="Secret ref for REST basic auth password",
     )
 
     args = parser.parse_args()
@@ -88,6 +103,9 @@ def main() -> int:
             sftp_password_secret_ref=args.sftp_password_secret_ref,
             sftp_private_key_secret_ref=args.sftp_private_key_secret_ref,
             rest_base_url_secret_ref=args.rest_base_url_secret_ref,
+            rest_bearer_token_secret_ref=args.rest_bearer_token_secret_ref,
+            rest_basic_user_secret_ref=args.rest_basic_user_secret_ref,
+            rest_basic_password_secret_ref=args.rest_basic_password_secret_ref,
         )
     except ConnectorConfigError as exc:
         print(str(exc), file=sys.stderr)

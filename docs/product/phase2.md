@@ -28,9 +28,9 @@ Analytics is offered to families as a **school service** under the school’s ex
 
 - **ERP webhook smoke** — `docs/operations/erp-webhook-smoke.md` and `scripts/erp_webhook_smoke.py` for signed `POST /api/erp/import` against local or staging hosts.
 - **SFTP connector pull** — `sync --kind sftp` with host/path/user/password (or key) secret refs resolved via `SA_SECRET_<REF>`; downloads `*.csv` to a temp dir and applies.
-- **Connector framework (foundation)** — `app/import_/connectors/` with local drop-directory sync, SFTP pull, REST stub, and `python -m app.import_.connectors.cli sync` for CronJob-style scheduled ingest. See [erp-connector-sync.md](../operations/erp-connector-sync.md).
+- **REST polling connector** — `sync --kind rest` with export URL and bearer or basic auth secret refs; fetches zip or single CSV over HTTPS (verified TLS) and applies.
+- **Connector framework (foundation)** — `app/import_/connectors/` with local drop-directory sync, SFTP pull, REST polling, and `python -m app.import_.connectors.cli sync` for CronJob-style scheduled ingest. See [erp-connector-sync.md](../operations/erp-connector-sync.md).
 
 ## Next slices (not yet built)
 
-- REST polling connector implementation
 - Delta detection and conflict resolution UI

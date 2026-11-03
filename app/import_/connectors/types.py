@@ -8,7 +8,7 @@ from typing import Any
 
 
 class ConnectorKind(StrEnum):
-    """Supported connector transports (local is production-ready; others are stubs)."""
+    """Supported connector transports for scheduled ERP sync."""
 
     LOCAL = "local"
     SFTP = "sftp"

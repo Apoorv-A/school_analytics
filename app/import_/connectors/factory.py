@@ -22,6 +22,9 @@ def build_connector(
     sftp_password_secret_ref: str = "",
     sftp_private_key_secret_ref: str = "",
     rest_base_url_secret_ref: str = "",
+    rest_bearer_token_secret_ref: str = "",
+    rest_basic_user_secret_ref: str = "",
+    rest_basic_password_secret_ref: str = "",
 ) -> ImportConnector:
     if kind == ConnectorKind.LOCAL:
         if local_dir is None:
@@ -45,7 +48,12 @@ def build_connector(
     if kind == ConnectorKind.REST:
         if not rest_base_url_secret_ref:
             raise ConnectorConfigError(
-                "rest connector requires a base URL secret ref (stub only today)"
+                "rest connector requires --rest-base-url-secret-ref"
             )
-        return RestPollingConnector(base_url_secret_ref=rest_base_url_secret_ref)
+        return RestPollingConnector(
+            base_url_secret_ref=rest_base_url_secret_ref,
+            bearer_token_secret_ref=rest_bearer_token_secret_ref,
+            basic_user_secret_ref=rest_basic_user_secret_ref,
+            basic_password_secret_ref=rest_basic_password_secret_ref,
+        )
     raise ConnectorConfigError(f"unsupported connector kind: {kind}")
