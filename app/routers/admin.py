@@ -252,6 +252,10 @@ def _render(
         pending_conflicts = list_import_conflicts(
             db, scope.tenant_id, status=ImportConflictStatus.PENDING
         )
+        tenant_settings = require_tenant_context().settings
+        school = db.scalars(
+            select(School).where(School.tenant_id == scope.tenant_id).limit(1)
+        ).first()
         return templates.TemplateResponse(
             request,
             page.get("template", "import.html"),
@@ -260,6 +264,9 @@ def _render(
                 "page_subtitle": page.get("subtitle"),
                 "active_nav": "/admin/import",
                 "current_user": scope.user,
+                "school": school,
+                "nav_groups": portal_nav(scope.role, tenant_settings),
+                "portal_home": PORTAL_HOME[scope.role],
                 "import_runs": runs,
                 "pending_mappings": pending_mappings,
                 "pending_conflicts": pending_conflicts,

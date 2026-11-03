@@ -152,7 +152,13 @@ class TestFeatureFlagRouteEnforcement:
         settings = TenantSettings.from_json(tenant.settings_json)
         hrefs = [item["href"] for group in portal_nav(Role.ADMIN, settings) for item in group["items"]]
         assert "/admin/import" in hrefs
-        assert admin_client.get("/admin/import").status_code == 200
+        overview = admin_client.get("/admin")
+        assert overview.status_code == 200
+        assert "/admin/import" in overview.text
+        import_page = admin_client.get("/admin/import")
+        assert import_page.status_code == 200
+        assert "Data import" in import_page.text
+        assert "/admin/import" in import_page.text
 
     def test_bulk_import_route_404_when_disabled(self, admin_client, db):
         _set_feature_flags(db, {"bulkImport": False})

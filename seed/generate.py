@@ -62,9 +62,10 @@ TENANT_SETTINGS = {
         "remarks": True,
         "parentPortal": True,
         "studentPortal": True,
-        "bulkImport": False,
+        "bulkImport": True,
         "interventions": False,
     },
+    "erp": {"webhookSecretRef": "sunrise/erp-webhook"},
     "auth": {"mfaEnabled": False, "mfaRequiredRoles": [], "sessionMaxAge": 28800},
 }
 
