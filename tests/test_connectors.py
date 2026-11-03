@@ -41,6 +41,34 @@ def connector_bundle_dir(tmp_path: Path) -> Path:
     return tmp_path
 
 
+class TestConnectorSyncCliArgs:
+    def test_rest_sync_accepts_documented_secret_ref_flags(self) -> None:
+        from app.import_.connectors.cli import build_arg_parser
+
+        parser = build_arg_parser()
+        args = parser.parse_args(
+            [
+                "sync",
+                "--tenant-id=00000000-0000-4000-8000-000000000001",
+                "--kind=rest",
+                "--rest-base-url-secret-ref=sunrise/erp-rest-export",
+                "--rest-bearer-token-secret-ref=sunrise/erp-rest-token",
+            ]
+        )
+        assert args.rest_base_url_secret_ref == "sunrise/erp-rest-export"
+
+        args_alias = parser.parse_args(
+            [
+                "sync",
+                "--tenant-id=00000000-0000-4000-8000-000000000001",
+                "--kind=rest",
+                "--rest-export-url-secret-ref=sunrise/erp-export-url",
+                "--rest-bearer-token-secret-ref=sunrise/erp-rest-token",
+            ]
+        )
+        assert args_alias.rest_base_url_secret_ref == "sunrise/erp-export-url"
+
+
 class TestLocalConnector:
     def test_requires_absolute_path(self, tmp_path: Path) -> None:
         with pytest.raises(ConnectorConfigError):

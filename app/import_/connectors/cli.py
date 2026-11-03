@@ -19,7 +19,7 @@ from app.import_.connectors.types import ConnectorKind  # noqa: E402
 from app.models import Tenant  # noqa: E402
 
 
-def main() -> int:
+def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Fetch an ERP CSV bundle via a connector and apply it to a tenant."
     )
@@ -69,6 +69,8 @@ def main() -> int:
     )
     sync_parser.add_argument(
         "--rest-base-url-secret-ref",
+        "--rest-export-url-secret-ref",
+        dest="rest_base_url_secret_ref",
         default="",
         help="Secret ref for REST export URL (https in production); SA_SECRET_<REF>",
     )
@@ -88,7 +90,12 @@ def main() -> int:
         help="Secret ref for REST basic auth password",
     )
 
-    args = parser.parse_args()
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
     if args.command != "sync":
         return 1
 

@@ -119,7 +119,7 @@ Example secret refs:
 | `sunrise/erp-rest-export` | `SA_SECRET_SUNRISE_ERP_REST_EXPORT` | `https://erp.vendor.example.com/api/v1/export/latest` |
 | `sunrise/erp-rest-token` | `SA_SECRET_SUNRISE_ERP_REST_TOKEN` | *(bearer token)* |
 
-Bearer auth:
+Bearer auth (`--rest-export-url-secret-ref` is an alias for `--rest-base-url-secret-ref`):
 
 ```bash
 PYTHONPATH=. python -m app.import_.connectors.cli sync \
