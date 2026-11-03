@@ -56,9 +56,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ## 6. Exact next step
 
-1. **Commit and push** local changes (not done in this session).
-2. **Continue Phase 2** from `docs/product/phase2.md` (connectors, delta sync UI) **or** follow user direction.
-3. For webhook smoke tests: set `erp.webhookSecretRef` per tenant in `school-analytics-config`, provision `SA_SECRET_<REF>`, then POST a signed CSV bundle to `/api/erp/import`.
+1. **Continue Phase 2** from `docs/product/phase2.md` (connector framework, scheduled sync, delta/conflict UI).
+2. **ERP webhook smoke:** see `docs/operations/erp-webhook-smoke.md` and `scripts/erp_webhook_smoke.py` after tenant secret refs are provisioned.
 
 ## 7. Anything the next agent must not change
 

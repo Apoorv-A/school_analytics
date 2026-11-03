@@ -24,6 +24,10 @@ Phase 2 extends ingest and insight delivery while keeping analytics read-mostly.
 
 Analytics is offered to families as a **school service** under the school’s existing enrollment and privacy notices. The platform does **not** collect separate in-app parental consent for viewing analytics; legal basis and notices are between the school and families (platform acts as processor where applicable).
 
+## Delivered (operations)
+
+- **ERP webhook smoke** — `docs/operations/erp-webhook-smoke.md` and `scripts/erp_webhook_smoke.py` for signed `POST /api/erp/import` against local or staging hosts.
+
 ## Next slices (not yet built)
 
 - Connector framework and scheduled sync jobs (SFTP, REST polling)
