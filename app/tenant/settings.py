@@ -18,8 +18,6 @@ class TenantSettings:
     student_portal_enabled: bool = True
     bulk_import_enabled: bool = False
     interventions_enabled: bool = False
-    parental_consent_enabled: bool = False
-    consent_privacy_notice_version: str = "2026-01"
     family_comparison_mode: str = "self"
     attendance_count_late_as_present: bool = True
     attendance_count_excused_as_present: bool = False
@@ -39,7 +37,6 @@ class TenantSettings:
         academics = payload.get("academics") or {}
         portal = payload.get("portal") or {}
         attendance = payload.get("attendance") or {}
-        consent = payload.get("consent") or {}
         mfa_enabled = bool(auth.get("mfaEnabled", False))
         mfa_roles = auth.get("mfaRequiredRoles") or []
         if not mfa_enabled:
@@ -54,10 +51,6 @@ class TenantSettings:
             student_portal_enabled=bool(features.get("studentPortal", True)),
             bulk_import_enabled=bool(features.get("bulkImport", False)),
             interventions_enabled=bool(features.get("interventions", False)),
-            parental_consent_enabled=bool(features.get("parentalConsent", False)),
-            consent_privacy_notice_version=str(
-                consent.get("privacyNoticeVersion") or "2026-01"
-            ),
             family_comparison_mode=str(portal.get("familyComparisonMode", "self")),
             attendance_count_late_as_present=bool(
                 attendance.get("countLateAsPresent", True)

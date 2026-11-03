@@ -22,7 +22,6 @@ from app.deps import AccessScope, get_access_scope
 from app.schemas import FilterOptions, FilterParams, filter_params
 from app.tenant.policy import (
     chart_allowed_for_scope,
-    guard_analytics_consent,
     guard_cohort_chart,
     sanitize_family_chart,
 )
@@ -71,7 +70,6 @@ def get_chart(
         )
     if not chart_allowed_for_scope(chart_key, scope):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
-    guard_analytics_consent(chart_key, db, scope, filters)
     guard_cohort_chart(chart_key, scope)
     payload = definition.handler(db, scope.narrow(filters, db), scope)
     payload = sanitize_family_chart(chart_key, payload, scope)

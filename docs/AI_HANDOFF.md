@@ -30,6 +30,8 @@ rm -rf platform   # legacy Java only
 
 Multi-tenant school analytics SaaS: one shared FastAPI deployment per environment, four portals (parent, student, teacher, principal), full-year assessment analytics, Chart.js visualizations, server-rendered Jinja2 UI.
 
+Analytics is a **school-provided service** to families under the school’s policies; the app does not gate parent/student dashboards on separate in-app consent (see `docs/product/phase2.md`).
+
 **Stack:** Python 3.11+, FastAPI, SQLAlchemy 2.x, PostgreSQL (production) / SQLite (local tests), Alembic, Pydantic v2, pytest.
 
 ---

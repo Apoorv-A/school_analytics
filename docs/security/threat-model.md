@@ -21,4 +21,4 @@
 
 ## Child data
 
-Before pilot with real students: parental consent flow and school DPA required. Per-tenant retention policy supports bounded retention via config.
+Before pilot with real students: school DPA and privacy notices (school-to-family) required; analytics is a school-provided service, not a separate in-app consent gate. Per-tenant retention policy supports bounded retention via config.

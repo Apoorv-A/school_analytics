@@ -9,12 +9,9 @@ from __future__ import annotations
 from enum import StrEnum
 
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
 
-from app.consent.status import student_analytics_consent_granted
 from app.deps import AccessScope
 from app.models import AttendanceStatus, Role
-from app.schemas import FilterParams
 from app.tenant.context import require_tenant_context
 from app.tenant.settings import TenantSettings
 
@@ -57,42 +54,18 @@ def cohort_benchmarks_visible(scope: AccessScope) -> bool:
     return family_comparison_mode() is FamilyComparisonMode.COHORT
 
 
-def _consent_gates_insight_summary(scope: AccessScope) -> bool:
-    settings = require_tenant_context().settings
-    return settings.parental_consent_enabled and scope.role in (Role.PARENT, Role.STUDENT)
-
-
-def family_insight_summary_visible(
-    scope: AccessScope, db: Session, student_id: int
-) -> bool:
-    if not _consent_gates_insight_summary(scope):
-        return True
-    return student_analytics_consent_granted(db, scope.tenant_id, student_id)
-
-
 def filter_portal_cards(
     cards: list[dict],
     scope: AccessScope,
     *,
-    db: Session | None = None,
+    db: object | None = None,
     student_id: int | None = None,
 ) -> list[dict]:
-    """Drop cohort-only and consent-gated dashboard cards for family portals."""
-    filtered = cards
-    if not cohort_benchmarks_visible(scope):
-        filtered = [
-            card for card in filtered if card.get("key") not in COHORT_ONLY_CARD_KEYS
-        ]
-    if (
-        db is not None
-        and student_id is not None
-        and _consent_gates_insight_summary(scope)
-        and not family_insight_summary_visible(scope, db, student_id)
-    ):
-        filtered = [
-            card for card in filtered if card.get("key") != INSIGHT_SUMMARY_CHART_KEY
-        ]
-    return filtered
+    """Drop cohort-only dashboard cards for family portals in self-comparison mode."""
+    del db, student_id
+    if cohort_benchmarks_visible(scope):
+        return cards
+    return [card for card in cards if card.get("key") not in COHORT_ONLY_CARD_KEYS]
 
 
 def guard_cohort_chart(chart_key: str, scope: AccessScope) -> None:
@@ -108,26 +81,6 @@ def chart_allowed_for_scope(chart_key: str, scope: AccessScope) -> bool:
     if chart_key in REMARKS_CHART_KEYS:
         return require_tenant_context().settings.remarks_enabled
     return True
-
-
-def guard_analytics_consent(
-    chart_key: str,
-    db: Session,
-    scope: AccessScope,
-    filters: FilterParams,
-) -> None:
-    """Block parent/student insight summary when analytics consent is not granted."""
-    if chart_key != INSIGHT_SUMMARY_CHART_KEY:
-        return
-    if not _consent_gates_insight_summary(scope):
-        return
-    student_id = filters.student_id
-    if student_id is None and scope.student_ids is not None and len(scope.student_ids) == 1:
-        student_id = next(iter(scope.student_ids))
-    if student_id is None or not student_analytics_consent_granted(
-        db, scope.tenant_id, student_id
-    ):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
 
 
 def attendance_present_days(counts: dict[str, int], settings: TenantSettings) -> int:

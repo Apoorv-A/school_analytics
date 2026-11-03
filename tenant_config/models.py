@@ -59,7 +59,6 @@ class FeatureFlags(BaseModel):
     studentPortal: bool = True
     bulkImport: bool = False
     interventions: bool = False
-    parentalConsent: bool = False
 
 
 class PortalPolicy(BaseModel):
@@ -68,14 +67,6 @@ class PortalPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     familyComparisonMode: Literal["self", "cohort"] = "self"
-
-
-class ConsentPolicy(BaseModel):
-    """Parental consent pilot (DPDP) presentation."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    privacyNoticeVersion: str = Field(default="2026-01", min_length=1, max_length=32)
 
 
 class AttendancePolicy(BaseModel):
@@ -191,7 +182,6 @@ class TenantConfigDocument(BaseModel):
     academics: AcademicThresholds
     features: FeatureFlags = Field(default_factory=FeatureFlags)
     portal: PortalPolicy = Field(default_factory=PortalPolicy)
-    consent: ConsentPolicy = Field(default_factory=ConsentPolicy)
     attendance: AttendancePolicy = Field(default_factory=AttendancePolicy)
     auth: AuthPolicy = Field(default_factory=AuthPolicy)
     erp: ErpConfig = Field(default_factory=ErpConfig)
