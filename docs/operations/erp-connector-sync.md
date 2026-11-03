@@ -49,6 +49,16 @@ PYTHONPATH=. python -m app.import_.connectors.cli sync \
 
 SQLite one-liner (no Python deps): `sqlite3 school.db "SELECT id FROM tenants WHERE key='sunrise';"`
 
+The tenant registry column is **`key`** (for example `sunrise`, `horizon`), not `slug`. Hyphenated UUIDs from the CLI are fine; SQLite may print ids without dashes.
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `Unknown tenant` | Placeholder UUID (for example `00000000-0000-0000-0000-000000000001`) or a id from another database | Run the lookup above against the **same** database as the app (`DATABASE_URL` in `.env`, default `sqlite:///./school.db`). Use that printed id for `--tenant-id`. |
+| `no such column: slug` | Wrong column name in ad-hoc SQL | Use `key`: `SELECT id, key FROM tenants;` |
+| `no such file or directory: uuid` (zsh) | Angle brackets around a placeholder | Omit `<>`; pass a real UUID string. |
+
 Exit code `0` when apply succeeds; `1` on validation/apply failure; `2` on connector configuration errors.
 
 Recent runs appear on **Admin → Data import** with source `sync:local`.
