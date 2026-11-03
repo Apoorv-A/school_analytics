@@ -27,8 +27,9 @@ Analytics is offered to families as a **school service** under the school’s ex
 ## Delivered (operations)
 
 - **ERP webhook smoke** — `docs/operations/erp-webhook-smoke.md` and `scripts/erp_webhook_smoke.py` for signed `POST /api/erp/import` against local or staging hosts.
+- **Connector framework (foundation)** — `app/import_/connectors/` with local drop-directory sync, SFTP/REST stubs, and `python -m app.import_.connectors.cli sync` for CronJob-style scheduled ingest. See [erp-connector-sync.md](../operations/erp-connector-sync.md).
 
 ## Next slices (not yet built)
 
-- Connector framework and scheduled sync jobs (SFTP, REST polling)
+- SFTP and REST polling connector implementations
 - Delta detection and conflict resolution UI

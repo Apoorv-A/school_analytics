@@ -349,7 +349,7 @@ Scope and roadmap: [docs/product/phase2.md](product/phase2.md) and [docs/product
 - **Intervention workflow** — `intervention_cases` / `intervention_contacts` tables, admin UI at `/admin/interventions`, API at `/api/interventions` when `features.interventions` is enabled.
 - **Policy layer** — `app/tenant/policy.py` applies `portal.familyComparisonMode` and attendance counting rules from tenant settings.
 
-**Up next:** Scheduled SFTP/REST connectors, delta sync, conflict resolution UI.
+**Up next:** SFTP/REST connector fetch (stubs exist under `app/import_/connectors/`), delta sync, conflict resolution UI. **Scheduled local sync:** `docs/operations/erp-connector-sync.md`.
 
 ---
 

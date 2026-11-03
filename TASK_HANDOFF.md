@@ -56,8 +56,10 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ## 6. Exact next step
 
-1. **Continue Phase 2** from `docs/product/phase2.md` (connector framework, scheduled sync, delta/conflict UI).
-2. **ERP webhook smoke:** see `docs/operations/erp-webhook-smoke.md` and `scripts/erp_webhook_smoke.py` after tenant secret refs are provisioned.
+1. **Implement SFTP or REST connector fetch** (secret refs only in tenant YAML; no credentials in config).
+2. **Delta detection and conflict-resolution UI** per `docs/product/phase2.md`.
+3. **ERP webhook smoke** (shipped): `docs/operations/erp-webhook-smoke.md` when tenant `erp.webhookSecretRef` and `SA_SECRET_<REF>` are provisioned.
+4. **Scheduled local sync** (shipped): `docs/operations/erp-connector-sync.md` and `python -m app.import_.connectors.cli sync --kind local`.
 
 ## 7. Anything the next agent must not change
 
