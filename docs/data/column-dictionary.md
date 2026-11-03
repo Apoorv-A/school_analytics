@@ -105,6 +105,16 @@ Generated from SQLAlchemy models. Do not edit by hand.
 | `created_at` | DATETIME | no | — |
 | `created_by_user_id` | INTEGER | yes | FK → users.id |
 
+## `import_sync_state`
+
+| Column | Type | Nullable | Notes |
+| --- | --- | --- | --- |
+| `id` | INTEGER | no | PK |
+| `tenant_id` | CHAR(32) | no | FK → tenants.id |
+| `source` | VARCHAR(40) | no | — |
+| `bundle_fingerprint` | VARCHAR(64) | no | — |
+| `updated_at` | DATETIME | no | — |
+
 ## `intervention_cases`
 
 | Column | Type | Nullable | Notes |

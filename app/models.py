@@ -670,6 +670,7 @@ class ImportRunStatus(enum.StrEnum):
     VALIDATED = "validated"
     APPLIED = "applied"
     FAILED = "failed"
+    SKIPPED = "skipped"
 
 
 class ImportMappingQueueStatus(enum.StrEnum):
@@ -895,6 +896,27 @@ class ImportMappingQueue(Base):
     )
 
     mapped_assessment: Mapped[Assessment | None] = relationship()
+
+
+class ImportSyncState(Base):
+    """Last successfully applied bundle fingerprint for scheduled ERP sync."""
+
+    __tablename__ = "import_sync_state"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "source",
+            name="uq_import_sync_state_tenant_source",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    bundle_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class ImportRun(Base):

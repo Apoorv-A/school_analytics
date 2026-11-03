@@ -20,7 +20,7 @@ from app.config import PROJECT_ROOT
 from app.db import Base, check_db_migrations_at_head
 
 BASELINE_PATH = PROJECT_ROOT / "alembic/versions/001_baseline_multi_tenant.py"
-HEAD_REVISION = "014_parental_consent"
+HEAD_REVISION = "015_import_sync_state"
 
 CORE_TABLES = frozenset(
     {
@@ -45,6 +45,7 @@ CORE_TABLES = frozenset(
 
 HEAD_TABLES = CORE_TABLES | {
     "import_runs",
+    "import_sync_state",
     "intervention_cases",
     "intervention_contacts",
     "intervention_events",
@@ -248,13 +249,14 @@ class TestMigrationChain:
         engine = create_engine(url)
         try:
             tables = _table_names(engine)
-            assert "parental_consent_records" not in tables
+            assert "import_sync_state" not in tables
+            assert "parental_consent_records" in tables
             assert "action_tasks" in tables
             assert "intervention_events" in tables
             assert "user_mfa_recovery_codes" in tables
             revision = engine.connect().execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-            assert revision == "013_action_tasks"
+            assert revision == "014_parental_consent"
         finally:
             engine.dispose()

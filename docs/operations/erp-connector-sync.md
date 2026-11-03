@@ -61,9 +61,9 @@ The tenant registry column is **`key`** (for example `sunrise`, `horizon`), not 
 | `no such column: slug` | Wrong column name in ad-hoc SQL | Use `key`: `SELECT id, key FROM tenants;` |
 | `no such file or directory: uuid` (zsh) | Angle brackets around a placeholder | Omit `<>`; pass a real UUID string. |
 
-Exit code `0` when apply succeeds; `1` on validation/apply failure; `2` on connector configuration errors.
+Exit code `0` when apply succeeds or the bundle is **skipped** as unchanged (delta sync); `1` on validation/apply failure; `2` on connector configuration errors.
 
-Recent runs appear on **Admin → Data import** with source `sync:local`, `sync:sftp`, or `sync:rest`.
+Recent runs appear on **Admin → Data import** with source `sync:local`, `sync:sftp`, or `sync:rest`. Unchanged bundles record status `skipped` instead of re-applying. See [erp-delta-sync.md](./erp-delta-sync.md) for fingerprint rules and `--force`.
 
 ## SFTP pull (CronJob pattern)
 

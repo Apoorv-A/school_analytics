@@ -23,6 +23,7 @@ OUTPUT = PROJECT_ROOT / "alembic/versions/001_baseline_multi_tenant.py"
 
 LATER_TABLES = {
     "import_runs",
+    "import_sync_state",
     "intervention_cases",
     "intervention_contacts",
     "password_reset_tokens",

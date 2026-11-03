@@ -89,6 +89,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default="",
         help="Secret ref for REST basic auth password",
     )
+    sync_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Apply even when the bundle fingerprint matches the last successful sync",
+    )
 
     return parser
 
@@ -124,9 +129,11 @@ def main(argv: list[str] | None = None) -> int:
         if tenant is None:
             print("Unknown tenant", file=sys.stderr)
             return 1
-        result = run_connector_sync(db, tenant_id, connector)
+        result = run_connector_sync(db, tenant_id, connector, force_apply=args.force)
         print(json.dumps(result.report, indent=2, default=str))
-        return 0 if result.applied else 1
+        if result.applied or result.skipped:
+            return 0
+        return 1
 
 
 if __name__ == "__main__":

@@ -23,3 +23,4 @@ class ConnectorSyncResult:
     source: str
     report: dict[str, Any]
     applied: bool
+    skipped: bool = False

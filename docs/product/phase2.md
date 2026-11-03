@@ -30,7 +30,8 @@ Analytics is offered to families as a **school service** under the school’s ex
 - **SFTP connector pull** — `sync --kind sftp` with host/path/user/password (or key) secret refs resolved via `SA_SECRET_<REF>`; downloads `*.csv` to a temp dir and applies.
 - **REST polling connector** — `sync --kind rest` with export URL and bearer or basic auth secret refs; fetches zip or single CSV over HTTPS (verified TLS) and applies.
 - **Connector framework (foundation)** — `app/import_/connectors/` with local drop-directory sync, SFTP pull, REST polling, and `python -m app.import_.connectors.cli sync` for CronJob-style scheduled ingest. See [erp-connector-sync.md](../operations/erp-connector-sync.md).
+- **Delta sync (bundle fingerprint)** — scheduled `sync:*` connectors skip validate/apply when the CSV bundle SHA-256 matches the last successful apply for that tenant and channel; `import_sync_state` table and `import_runs.status=skipped`. Operator override: `--force`. See [erp-delta-sync.md](../operations/erp-delta-sync.md).
 
 ## Next slices (not yet built)
 
-- Delta detection and conflict resolution UI
+- Conflict resolution UI (row-level ERP vs analytics disagreements)
