@@ -13,6 +13,54 @@
   <pre id="import-report" class="import-report"></pre>
 </section>
 
+{% if pending_conflicts %}
+<section class="card" style="margin-top: 16px;">
+  <h2>Import conflicts</h2>
+  <p class="muted">ERP rows that disagree with analytics-owned scores, remarks, or attendance. Resolve before the next sync overwrites your choice.</p>
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Entity</th>
+        <th>External id</th>
+        <th>Fields</th>
+        <th>Local</th>
+        <th>Incoming (ERP)</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in pending_conflicts %}
+      <tr data-conflict-id="{{ item.id }}">
+        <td>{{ item.entity_type.value }} #{{ item.entity_id }}</td>
+        <td>{% if item.external_id %}<code>{{ item.external_id }}</code>{% else %}—{% endif %}</td>
+        <td>{{ item.field_names | join(", ") }}</td>
+        <td><code>{{ item.local_values }}</code></td>
+        <td><code>{{ item.incoming_values }}</code></td>
+        <td class="conflict-actions">
+          <button type="button" class="btn" data-action="conflict-keep-local">Keep local</button>
+          <button type="button" class="btn btn--primary" data-action="conflict-accept-erp">Accept ERP</button>
+          {% if item.field_names | length == 1 %}
+          <button type="button" class="btn" data-action="conflict-per-field" data-field="{{ item.field_names[0] }}" data-side="incoming">Use ERP {{ item.field_names[0] }}</button>
+          {% elif item.field_names | length == 2 %}
+          {% for field in item.field_names %}
+          <label style="display:block;font-size:12px;margin-top:4px">
+            {{ field }}:
+            <select class="conflict-field-choice" data-field="{{ field }}">
+              <option value="local">Local</option>
+              <option value="incoming">ERP</option>
+            </select>
+          </label>
+          {% endfor %}
+          <button type="button" class="btn" data-action="conflict-apply-fields" style="margin-top:6px">Apply field picks</button>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
 {% if pending_mappings %}
 <section class="card" style="margin-top: 16px;">
   <h2>Assessment mapping queue</h2>
@@ -121,6 +169,59 @@
           }
           window.location.reload();
         });
+    });
+  });
+  function resolveConflict(conflictId, body) {
+    fetch("/api/import/conflicts/" + conflictId + "/resolve", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: Object.assign({ "Content-Type": "application/json" }, csrfHeaders()),
+      body: JSON.stringify(body),
+    })
+      .then(function (r) { return r.json().then(function (payload) { return { ok: r.ok, payload: payload }; }); })
+      .then(function (result) {
+        if (!result.ok) {
+          report.textContent = JSON.stringify(result.payload, null, 2);
+          return;
+        }
+        window.location.reload();
+      });
+  }
+  document.querySelectorAll("[data-action='conflict-keep-local']").forEach(function (button) {
+    button.addEventListener("click", function () {
+      const row = button.closest("tr");
+      resolveConflict(row.getAttribute("data-conflict-id"), { strategy: "keep_local" });
+    });
+  });
+  document.querySelectorAll("[data-action='conflict-accept-erp']").forEach(function (button) {
+    button.addEventListener("click", function () {
+      const row = button.closest("tr");
+      if (!window.confirm("Apply all incoming ERP values for this row?")) return;
+      resolveConflict(row.getAttribute("data-conflict-id"), { strategy: "accept_erp" });
+    });
+  });
+  document.querySelectorAll("[data-action='conflict-per-field']").forEach(function (button) {
+    button.addEventListener("click", function () {
+      const row = button.closest("tr");
+      const field = button.getAttribute("data-field");
+      const side = button.getAttribute("data-side");
+      resolveConflict(row.getAttribute("data-conflict-id"), {
+        strategy: "per_field",
+        field_choices: (function () { const c = {}; c[field] = side; return c; })(),
+      });
+    });
+  });
+  document.querySelectorAll("[data-action='conflict-apply-fields']").forEach(function (button) {
+    button.addEventListener("click", function () {
+      const row = button.closest("tr");
+      const choices = {};
+      row.querySelectorAll(".conflict-field-choice").forEach(function (select) {
+        choices[select.getAttribute("data-field")] = select.value;
+      });
+      resolveConflict(row.getAttribute("data-conflict-id"), {
+        strategy: "per_field",
+        field_choices: choices,
+      });
     });
   });
   document.querySelectorAll("[data-action='reject-assessment']").forEach(function (button) {

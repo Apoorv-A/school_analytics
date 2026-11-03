@@ -24,6 +24,7 @@ from app.routers import (
     erp_webhook,
     exports,
     import_api,
+    import_conflicts,
     import_mapping,
     interventions,
     parent,
@@ -110,6 +111,7 @@ app.include_router(remarks.router)
 app.include_router(interventions.router)
 app.include_router(import_api.router)
 app.include_router(import_mapping.router)
+app.include_router(import_conflicts.router)
 app.include_router(erp_webhook.router)
 
 

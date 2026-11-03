@@ -14,6 +14,17 @@ from fastapi import UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.import_.conflicts import (
+    ATTENDANCE_FIELDS,
+    REMARK_FIELDS,
+    SCORE_FIELDS,
+    _diff_fields,
+    attendance_snapshots,
+    is_analytics_owned_source,
+    queue_import_conflict,
+    remark_snapshots,
+    score_snapshots,
+)
 from app.import_.mapping_queue import queue_unmapped_assessment, score_payload_snippet
 from app.import_.upload_io import write_named_uploads
 from app.import_.validate import validate_directory
@@ -23,6 +34,7 @@ from app.models import (
     Attendance,
     AttendanceStatus,
     Grade,
+    ImportConflictEntityType,
     Remark,
     RemarkCategory,
     Role,
@@ -44,6 +56,10 @@ CreatedUserCredential = dict[str, str]
 UsersApplyResult = tuple[int, list[ApplyWarning], list[CreatedUserCredential]]
 
 _OPERATOR_SOURCES = frozenset({"cli", "upload"})
+
+
+def _queue_conflicts_for_source(source: str) -> bool:
+    return source not in _OPERATOR_SOURCES
 
 
 def _row_warning(file: str, row: int, message: str) -> ApplyWarning:
@@ -149,6 +165,7 @@ def apply_directory(
 
     applied: dict[str, int] = {}
     warnings: list[ApplyWarning] = []
+    conflicts_queued = 0
     created_users: list[CreatedUserCredential] = []
     structure_path = directory / "school_structure.csv"
     if structure_path.exists():
@@ -163,21 +180,28 @@ def apply_directory(
         created_users.extend(new_users)
     scores_path = directory / "scores.csv"
     if scores_path.exists():
-        count, score_warnings = _apply_scores(
+        count, score_warnings, score_conflicts = _apply_scores(
             db, tenant_id, scores_path, source=source
         )
         applied["scores.csv"] = count
         warnings.extend(score_warnings)
+        conflicts_queued += score_conflicts
     attendance_path = directory / "attendance.csv"
     if attendance_path.exists():
-        count, attendance_warnings = _apply_attendance(db, tenant_id, attendance_path)
+        count, attendance_warnings, attendance_conflicts = _apply_attendance(
+            db, tenant_id, attendance_path, source=source
+        )
         applied["attendance.csv"] = count
         warnings.extend(attendance_warnings)
+        conflicts_queued += attendance_conflicts
     remarks_path = directory / "remarks.csv"
     if remarks_path.exists():
-        count, remark_warnings = _apply_remarks(db, tenant_id, remarks_path)
+        count, remark_warnings, remark_conflicts = _apply_remarks(
+            db, tenant_id, remarks_path, source=source
+        )
         applied["remarks.csv"] = count
         warnings.extend(remark_warnings)
+        conflicts_queued += remark_conflicts
 
     db.commit()
     result: dict[str, object] = {
@@ -187,6 +211,8 @@ def apply_directory(
         "errors": [],
         "warnings": warnings,
     }
+    if conflicts_queued:
+        result["conflicts_queued"] = conflicts_queued
     if warnings:
         result["partial"] = True
     if created_users and source in _OPERATOR_SOURCES:
@@ -550,12 +576,14 @@ def _apply_users(
 
 def _apply_scores(
     db: Session, tenant_id: uuid.UUID, path: Path, *, source: str
-) -> ApplyResult:
+) -> tuple[int, list[ApplyWarning], int]:
     from app.import_.models import ScoreRow
 
     school = _tenant_school(db, tenant_id)
     count = 0
+    conflicts = 0
     warnings: list[ApplyWarning] = []
+    queue_conflicts = _queue_conflicts_for_source(source)
     with path.open(newline="", encoding="utf-8") as handle:
         for row_number, row in enumerate(csv.DictReader(handle), start=2):
             data = ScoreRow.model_validate(row)
@@ -678,19 +706,60 @@ def _apply_scores(
                 )
                 count += 1
             else:
+                local_values, incoming_values = score_snapshots(
+                    existing,
+                    data.marks_obtained,
+                    data.is_absent,
+                    data.source_system,
+                )
+                field_names = _diff_fields(
+                    local_values, incoming_values, allowed=SCORE_FIELDS
+                )
+                if (
+                    field_names
+                    and queue_conflicts
+                    and is_analytics_owned_source(existing.source_system)
+                ):
+                    queue_import_conflict(
+                        db,
+                        tenant_id=tenant_id,
+                        entity_type=ImportConflictEntityType.SCORE,
+                        entity_id=existing.id,
+                        external_id=data.external_id or existing.external_id,
+                        source=source,
+                        local_values=local_values,
+                        incoming_values=incoming_values,
+                        field_names=field_names,
+                    )
+                    conflicts += 1
+                    warnings.append(
+                        _row_warning(
+                            path.name,
+                            row_number,
+                            (
+                                "Score disagrees with analytics-owned values; "
+                                "queued for administrator resolution"
+                            ),
+                        )
+                    )
+                    continue
                 existing.marks_obtained = data.marks_obtained
                 existing.is_absent = data.is_absent
                 existing.external_id = data.external_id
                 existing.source_system = data.source_system
                 count += 1
-    return count, warnings
+    return count, warnings, conflicts
 
 
-def _apply_attendance(db: Session, tenant_id: uuid.UUID, path: Path) -> ApplyResult:
+def _apply_attendance(
+    db: Session, tenant_id: uuid.UUID, path: Path, *, source: str
+) -> tuple[int, list[ApplyWarning], int]:
     from app.import_.models import AttendanceRow
 
     count = 0
+    conflicts = 0
     warnings: list[ApplyWarning] = []
+    queue_conflicts = _queue_conflicts_for_source(source)
     with path.open(newline="", encoding="utf-8") as handle:
         for row_number, row in enumerate(csv.DictReader(handle), start=2):
             data = AttendanceRow.model_validate(row)
@@ -739,20 +808,58 @@ def _apply_attendance(db: Session, tenant_id: uuid.UUID, path: Path) -> ApplyRes
                 )
                 count += 1
             else:
+                local_values, incoming_values = attendance_snapshots(
+                    existing, data.status, data.source_system
+                )
+                field_names = _diff_fields(
+                    local_values, incoming_values, allowed=ATTENDANCE_FIELDS
+                )
+                if (
+                    field_names
+                    and queue_conflicts
+                    and is_analytics_owned_source(existing.source_system)
+                ):
+                    queue_import_conflict(
+                        db,
+                        tenant_id=tenant_id,
+                        entity_type=ImportConflictEntityType.ATTENDANCE,
+                        entity_id=existing.id,
+                        external_id=data.external_id or existing.external_id,
+                        source=source,
+                        local_values=local_values,
+                        incoming_values=incoming_values,
+                        field_names=field_names,
+                    )
+                    conflicts += 1
+                    warnings.append(
+                        _row_warning(
+                            path.name,
+                            row_number,
+                            (
+                                "Attendance disagrees with analytics-owned values; "
+                                "queued for administrator resolution"
+                            ),
+                        )
+                    )
+                    continue
                 existing.term_id = term.id
                 existing.status = AttendanceStatus(data.status)
                 existing.external_id = data.external_id
                 existing.source_system = data.source_system
                 count += 1
-    return count, warnings
+    return count, warnings, conflicts
 
 
-def _apply_remarks(db: Session, tenant_id: uuid.UUID, path: Path) -> ApplyResult:
+def _apply_remarks(
+    db: Session, tenant_id: uuid.UUID, path: Path, *, source: str
+) -> tuple[int, list[ApplyWarning], int]:
     from app.import_.models import RemarkRow
 
     school = _tenant_school(db, tenant_id)
     count = 0
+    conflicts = 0
     warnings: list[ApplyWarning] = []
+    queue_conflicts = _queue_conflicts_for_source(source)
     with path.open(newline="", encoding="utf-8") as handle:
         for row_number, row in enumerate(csv.DictReader(handle), start=2):
             data = RemarkRow.model_validate(row)
@@ -857,6 +964,43 @@ def _apply_remarks(db: Session, tenant_id: uuid.UUID, path: Path) -> ApplyResult
                         )
                         continue
                     else:
+                        local_values, incoming_values = remark_snapshots(
+                            existing,
+                            data.body,
+                            data.category,
+                            data.source_system,
+                        )
+                        field_names = _diff_fields(
+                            local_values, incoming_values, allowed=REMARK_FIELDS
+                        )
+                        if (
+                            field_names
+                            and queue_conflicts
+                            and is_analytics_owned_source(existing.source_system)
+                        ):
+                            queue_import_conflict(
+                                db,
+                                tenant_id=tenant_id,
+                                entity_type=ImportConflictEntityType.REMARK,
+                                entity_id=existing.id,
+                                external_id=data.external_id,
+                                source=source,
+                                local_values=local_values,
+                                incoming_values=incoming_values,
+                                field_names=field_names,
+                            )
+                            conflicts += 1
+                            warnings.append(
+                                _row_warning(
+                                    path.name,
+                                    row_number,
+                                    (
+                                        "Remark disagrees with analytics-owned values; "
+                                        "queued for administrator resolution"
+                                    ),
+                                )
+                            )
+                            continue
                         existing.category = RemarkCategory(data.category)
                         existing.body = data.body
                         existing.source_system = data.source_system
@@ -905,7 +1049,7 @@ def _apply_remarks(db: Session, tenant_id: uuid.UUID, path: Path) -> ApplyResult
                 )
             )
             count += 1
-    return count, warnings
+    return count, warnings, conflicts
 
 
 def apply_uploads(

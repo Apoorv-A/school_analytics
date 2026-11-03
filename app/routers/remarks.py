@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import AccessScope, get_access_scope, require_roles
+from app.import_.conflicts import ANALYTICS_SOURCE_SYSTEM
 from app.models import Remark, RemarkCategory, Role, Student, Term
 from app.tenant.features import require_remarks_enabled
 
@@ -64,6 +65,7 @@ def create_remark(
         subject_id=payload.subject_id,
         category=payload.category,
         body=payload.body,
+        source_system=ANALYTICS_SOURCE_SYSTEM,
     )
     db.add(remark)
     db.commit()

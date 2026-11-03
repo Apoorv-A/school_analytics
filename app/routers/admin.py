@@ -240,13 +240,17 @@ def _render(
     page = PAGES[page_key]
     if page_key == "import":
         require_bulk_import_enabled()
+        from app.import_.conflicts import list_import_conflicts
         from app.import_.history import recent_import_runs
         from app.import_.mapping_queue import list_mapping_queue
-        from app.models import ImportMappingQueueStatus
+        from app.models import ImportConflictStatus, ImportMappingQueueStatus
 
         runs = recent_import_runs(db, scope.tenant_id)
         pending_mappings = list_mapping_queue(
             db, scope.tenant_id, status=ImportMappingQueueStatus.PENDING
+        )
+        pending_conflicts = list_import_conflicts(
+            db, scope.tenant_id, status=ImportConflictStatus.PENDING
         )
         return templates.TemplateResponse(
             request,
@@ -258,6 +262,7 @@ def _render(
                 "current_user": scope.user,
                 "import_runs": runs,
                 "pending_mappings": pending_mappings,
+                "pending_conflicts": pending_conflicts,
             },
         )
     return render_dashboard(

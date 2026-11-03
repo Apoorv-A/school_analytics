@@ -32,6 +32,14 @@ Analytics is offered to families as a **school service** under the school’s ex
 - **Connector framework (foundation)** — `app/import_/connectors/` with local drop-directory sync, SFTP pull, REST polling, and `python -m app.import_.connectors.cli sync` for CronJob-style scheduled ingest. See [erp-connector-sync.md](../operations/erp-connector-sync.md).
 - **Delta sync (bundle fingerprint)** — scheduled `sync:*` connectors skip validate/apply when the CSV bundle SHA-256 matches the last successful apply for that tenant and channel; `import_sync_state` table and `import_runs.status=skipped`. Operator override: `--force`. See [erp-delta-sync.md](../operations/erp-delta-sync.md).
 
+## Delivered (import conflicts)
+
+- **`import_conflicts` table** — pending row-level disagreements when scheduled/webhook ERP ingest would overwrite analytics-owned scores, remarks, or attendance (`source_system=analytics`).
+- **Admin import UI** — conflict list on `/admin/import` with keep local, accept ERP, and per-field resolution (single-field shortcut or two-field picker).
+- **`GET/POST /api/import/conflicts`** — list pending conflicts and resolve with audit events.
+
+Operator CLI and admin upload (`source=cli|upload`) still overwrite intentionally; ERP sync and webhook paths queue conflicts instead of silent overwrite.
+
 ## Next slices (not yet built)
 
-- Conflict resolution UI (row-level ERP vs analytics disagreements)
+- Full bidirectional ERP sync and automated conflict detection previews before apply

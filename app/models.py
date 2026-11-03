@@ -679,6 +679,19 @@ class ImportMappingQueueStatus(enum.StrEnum):
     REJECTED = "rejected"
 
 
+class ImportConflictEntityType(enum.StrEnum):
+    SCORE = "score"
+    REMARK = "remark"
+    ATTENDANCE = "attendance"
+
+
+class ImportConflictStatus(enum.StrEnum):
+    PENDING = "pending"
+    KEEP_LOCAL = "keep_local"
+    ACCEPT_ERP = "accept_erp"
+    PER_FIELD = "per_field"
+
+
 class InterventionCase(Base):
     """Actionable follow-up for an at-risk student."""
 
@@ -896,6 +909,55 @@ class ImportMappingQueue(Base):
     )
 
     mapped_assessment: Mapped[Assessment | None] = relationship()
+
+
+class ImportConflict(Base):
+    """Pending operator resolution when ERP import disagrees with analytics-owned data."""
+
+    __tablename__ = "import_conflicts"
+    __table_args__ = (
+        Index(
+            "ix_import_conflicts_tenant_status",
+            "tenant_id",
+            "status",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "entity_type",
+            "entity_id",
+            name="uq_import_conflicts_entity",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    entity_type: Mapped[ImportConflictEntityType] = mapped_column(
+        Enum(ImportConflictEntityType, native_enum=False), nullable=False
+    )
+    entity_id: Mapped[int] = mapped_column(nullable=False)
+    external_id: Mapped[str | None] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    local_values: Mapped[dict] = mapped_column(JSON, nullable=False)
+    incoming_values: Mapped[dict] = mapped_column(JSON, nullable=False)
+    field_names: Mapped[list] = mapped_column(JSON, nullable=False)
+    status: Mapped[ImportConflictStatus] = mapped_column(
+        Enum(ImportConflictStatus, native_enum=False),
+        nullable=False,
+        default=ImportConflictStatus.PENDING,
+    )
+    resolution: Mapped[dict | None] = mapped_column(JSON)
+    resolved_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
 
 
 class ImportSyncState(Base):

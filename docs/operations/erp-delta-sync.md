@@ -32,14 +32,13 @@ Exit code `0` when apply succeeds **or** when the run is skipped as unchanged; `
 
 Skipped runs appear on **Admin → Data import** with status `skipped` and source `sync:local` / `sync:sftp` / `sync:rest`. JSON report includes `skipped: true` and `delta.reason: bundle_unchanged`.
 
-## Next: conflict resolution UI
+## Import conflicts (row-level)
 
-This slice avoids row-level merge logic. The upcoming conflict UI will build on:
+When a changed bundle is applied via **`sync:*`** or **`POST /api/erp/import`**, rows marked analytics-owned (`source_system=analytics`, e.g. teacher remarks or locally adjusted scores) are **not** overwritten silently. A pending row is stored in **`import_conflicts`** and surfaced on **Admin → Data import**.
 
-- **`import_sync_state`** — knowing when the ERP export last changed.
-- **`import_runs`** history — correlating skipped vs applied sync cycles.
-- **External correlation ids** on students, assessments, remarks (`external_id`, `source_system`) — detecting per-entity changes inside a changed bundle.
-- **Idempotent apply** — today’s upserts define the baseline “winning” row without operator choice; conflicts will surface when incoming ERP rows disagree with analytics-owned edits.
+Principal CLI/upload apply (`source=cli|upload`) still overwrites — operators explicitly chose that bundle.
+
+Resolution strategies: **keep local**, **accept ERP**, or **per-field** merge on the conflicting columns. See [Phase 2 scope](../product/phase2.md).
 
 ## Related
 

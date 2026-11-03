@@ -75,6 +75,26 @@ Generated from SQLAlchemy models. Do not edit by hand.
 | `name` | VARCHAR(60) | no | — |
 | `level` | INTEGER | no | — |
 
+## `import_conflicts`
+
+| Column | Type | Nullable | Notes |
+| --- | --- | --- | --- |
+| `id` | INTEGER | no | PK |
+| `tenant_id` | CHAR(32) | no | FK → tenants.id |
+| `entity_type` | VARCHAR(10) | no | — |
+| `entity_id` | INTEGER | no | — |
+| `external_id` | VARCHAR(64) | yes | — |
+| `source` | VARCHAR(40) | no | — |
+| `local_values` | JSON | no | — |
+| `incoming_values` | JSON | no | — |
+| `field_names` | JSON | no | — |
+| `status` | VARCHAR(10) | no | — |
+| `resolution` | JSON | yes | — |
+| `resolved_by_user_id` | INTEGER | yes | FK → users.id |
+| `resolved_at` | DATETIME | yes | — |
+| `created_at` | DATETIME | no | — |
+| `updated_at` | DATETIME | no | — |
+
 ## `import_mapping_queue`
 
 | Column | Type | Nullable | Notes |
