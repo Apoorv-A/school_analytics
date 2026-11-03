@@ -142,8 +142,56 @@ PYTHONPATH=. python -m app.import_.connectors.cli sync \
 
 Response size limits match admin upload ingest (5 MB per CSV member, 25 MB response, 50 MB zip decompressed). Redirects are not followed.
 
+### Local REST smoke
+
+Placeholder URLs such as `https://your-erp.example/export.zip` are **not** real ERP endpoints. They fail at the HTTP layer (typically DNS resolution for `.example` hosts) with errors like `REST export host could not be resolved (DNS): your-erp.example`. For day-to-day local ingest, prefer **`--kind=local`** and a directory under `docs/onboarding/csv-templates/` (see [Local drop directory](#local-drop-directory-cronjob-pattern) above).
+
+To exercise the **REST connector** end-to-end on a laptop:
+
+1. Set `DEBUG=true` in `.env` so **http** export URLs are allowed (production requires https).
+2. Start the sample export server (serves a zip of the CSV templates with bearer auth):
+
+   ```bash
+   export REST_SMOKE_BEARER_TOKEN='smoke-bearer-token'
+   PYTHONPATH=. python scripts/rest_export_smoke_server.py --port=8765
+   ```
+
+3. Point secret refs at a hostname that resolves to the server. The connector blocks the hostnames `localhost` and loopback/private IP literals, but `sunrise.localhost` usually resolves to `127.0.0.1` and passes validation:
+
+   ```bash
+   export SA_SECRET_SUNRISE_ERP_EXPORT_URL='http://sunrise.localhost:8765/export.zip'
+   export SA_SECRET_SUNRISE_ERP_REST_TOKEN='smoke-bearer-token'
+
+   PYTHONPATH=. python -m app.import_.connectors.cli sync \
+     --tenant-id="${SUNRISE_TENANT_ID}" \
+     --kind=rest \
+     --rest-export-url-secret-ref=sunrise/erp-export-url \
+     --rest-bearer-token-secret-ref=sunrise/erp-rest-token
+   ```
+
+   Ref → env mapping follows `SA_SECRET_<REF>` (slashes and hyphens become underscores). Examples:
+
+   | Ref | `SA_SECRET_*` env |
+   | --- | --- |
+   | `sunrise/erp-export-url` | `SA_SECRET_SUNRISE_ERP_EXPORT_URL` |
+   | `sunrise/erp-rest-export` | `SA_SECRET_SUNRISE_ERP_REST_EXPORT` |
+   | `sunrise/erp-rest-token` | `SA_SECRET_SUNRISE_ERP_REST_TOKEN` |
+
+4. Expect JSON with `"valid": true` when apply succeeds. Connector fetch failures surface as `"valid": false` with a single `errors[].error` string (HTTP status, DNS, timeout, TLS — never the bearer token).
+
+Quick curl check (same URL and token as the server):
+
+```bash
+curl -sf -H "Authorization: Bearer smoke-bearer-token" \
+  -o /tmp/rest-smoke.zip \
+  http://sunrise.localhost:8765/export.zip
+```
+
+See also [erp-rest-smoke.md](./erp-rest-smoke.md) for a focused checklist.
+
 ## Related
 
+- [ERP REST smoke](./erp-rest-smoke.md)
 - [ERP webhook smoke](./erp-webhook-smoke.md)
 - [ERP strategy](../product/erp-strategy.md)
 - [Phase 2 scope](../product/phase2.md)

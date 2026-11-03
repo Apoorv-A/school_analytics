@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import errno
 import io
 import ipaddress
 import logging
 import re
+import socket
+import ssl
 import tempfile
 import zipfile
 from collections.abc import Callable, Iterator
@@ -166,6 +169,47 @@ def _materialize_response_body(body: bytes, dest_dir: Path, *, filename: str | N
     return 1
 
 
+def _export_host_label(export_url: str) -> str:
+    parsed = urlparse(export_url)
+    if parsed.hostname:
+        return parsed.hostname
+    return parsed.netloc or "unknown host"
+
+
+def _describe_rest_http_error(exc: httpx.HTTPError, export_url: str) -> str:
+    """Build a user-safe message from an httpx failure (no URLs with secrets)."""
+    host = _export_host_label(export_url)
+    if isinstance(exc, httpx.ConnectTimeout):
+        return f"REST export connect timed out for {host}"
+    if isinstance(exc, httpx.ReadTimeout):
+        return f"REST export read timed out for {host}"
+    if isinstance(exc, httpx.TimeoutException):
+        return f"REST export request timed out for {host}"
+    if isinstance(exc, httpx.UnsupportedProtocol):
+        return "REST export URL scheme is not supported (use http or https)"
+
+    cause = exc.__cause__
+    if isinstance(cause, socket.gaierror):
+        return f"REST export host could not be resolved (DNS): {host}"
+    if isinstance(cause, ssl.SSLCertVerificationError):
+        return f"REST export TLS certificate verification failed for {host}"
+    if isinstance(cause, ssl.SSLError):
+        return f"REST export TLS handshake failed for {host}"
+    if isinstance(cause, ConnectionRefusedError):
+        return f"REST export connection refused by {host}"
+    if isinstance(cause, OSError):
+        if cause.errno == errno.ECONNREFUSED:
+            return f"REST export connection refused by {host}"
+        if cause.errno in (errno.ENETUNREACH, errno.EHOSTUNREACH):
+            return f"REST export host unreachable: {host}"
+
+    if isinstance(exc, httpx.ConnectError):
+        return f"REST export could not connect to {host}"
+    if isinstance(exc, httpx.NetworkError):
+        return f"REST export network error for {host}"
+    return f"REST export request failed for {host}"
+
+
 def _read_response_bytes(response: httpx.Response) -> bytes:
     total = 0
     chunks: list[bytes] = []
@@ -198,11 +242,18 @@ def _fetch_export(
     try:
         response = client.get(url, headers=headers, auth=auth)
     except httpx.HTTPError as exc:
-        raise ConnectorFetchError("REST export request failed") from exc
+        host = _export_host_label(url)
+        logger.warning(
+            "REST export HTTP error for %s (%s)",
+            host,
+            type(exc).__name__,
+        )
+        raise ConnectorFetchError(_describe_rest_http_error(exc, url)) from exc
 
     if response.status_code >= 400:
+        host = _export_host_label(url)
         raise ConnectorFetchError(
-            f"REST export request failed with HTTP {response.status_code}"
+            f"REST export request failed with HTTP {response.status_code} from {host}"
         )
 
     filename = _parse_content_disposition_filename(

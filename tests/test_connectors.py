@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import socket
 import stat
 import zipfile
 from pathlib import Path
@@ -15,7 +16,11 @@ import tests._ensure_paramiko  # noqa: F401 — stub paramiko when not installed
 from app.import_.connectors.errors import ConnectorConfigError, ConnectorFetchError
 from app.import_.connectors.factory import build_connector
 from app.import_.connectors.local import LocalPathConnector
-from app.import_.connectors.rest import RestPollingConnector, _validate_export_url
+from app.import_.connectors.rest import (
+    RestPollingConnector,
+    _describe_rest_http_error,
+    _validate_export_url,
+)
 from app.import_.connectors.runner import run_connector_sync
 from app.import_.connectors.sftp import (
     SftpConnector,
@@ -290,9 +295,8 @@ class TestRestConnectorFetch:
     ) -> None:
         url_ref = "erp/rest/export-url"
         token_ref = "erp/rest/token"
-        monkeypatch.setenv(
-            secret_env_name(url_ref), "https://export.example.com/v1/bundle"
-        )
+        export_url = "https://export.example.com/v1/bundle"
+        monkeypatch.setenv(secret_env_name(url_ref), export_url)
         monkeypatch.setenv(secret_env_name(token_ref), "token")
 
         def handler(_request: httpx.Request) -> httpx.Response:
@@ -305,9 +309,49 @@ class TestRestConnectorFetch:
                 transport=httpx.MockTransport(handler)
             ),
         )
-        with pytest.raises(ConnectorFetchError):
+        with pytest.raises(ConnectorFetchError, match="HTTP 503") as exc_info:
             with connector.materialize_bundle():
                 pass
+        assert "export.example.com" in str(exc_info.value)
+
+    def test_connect_error_surfaces_dns_hint(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        url_ref = "erp/rest/export-url"
+        token_ref = "erp/rest/token"
+        export_url = "https://your-erp.example/export.zip"
+        monkeypatch.setenv(secret_env_name(url_ref), export_url)
+        monkeypatch.setenv(secret_env_name(token_ref), "token")
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError(
+                "dns failed",
+                request=_request,
+            )
+
+        connector = RestPollingConnector(
+            base_url_secret_ref=url_ref,
+            bearer_token_secret_ref=token_ref,
+            client_factory=lambda: httpx.Client(
+                transport=httpx.MockTransport(handler)
+            ),
+        )
+        with pytest.raises(ConnectorFetchError, match=r"your-erp\.example"):
+            with connector.materialize_bundle():
+                pass
+
+
+class TestRestHttpErrorMessages:
+    def test_describe_gaierror(self) -> None:
+        request = httpx.Request("GET", "https://your-erp.example/export.zip")
+        err = httpx.ConnectError(
+            "failed",
+            request=request,
+        )
+        err.__cause__ = socket.gaierror("Name or service not known")
+        message = _describe_rest_http_error(err, str(request.url))
+        assert "DNS" in message
+        assert "your-erp.example" in message
 
 
 class TestRunConnectorSync:
