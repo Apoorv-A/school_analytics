@@ -37,6 +37,7 @@ Analytics is offered to families as a **school service** under the school’s ex
 - **`import_conflicts` table** — pending row-level disagreements when scheduled/webhook ERP ingest would overwrite analytics-owned scores, remarks, or attendance (`source_system=analytics`).
 - **Admin import UI** — conflict list on `/admin/import` with keep local, accept ERP, and per-field resolution (single-field shortcut or two-field picker).
 - **`GET/POST /api/import/conflicts`** — list pending conflicts and resolve with audit events.
+- **Conflict smoke** — [erp-import-conflicts-smoke.md](../operations/erp-import-conflicts-smoke.md).
 
 Operator CLI and admin upload (`source=cli|upload`) still overwrite intentionally; ERP sync and webhook paths queue conflicts instead of silent overwrite.
 
