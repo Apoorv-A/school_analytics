@@ -23,10 +23,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve image tags
+        id: image
+        run: |
+          ref="${GITHUB_REF_NAME}"
+          semver="${ref#v}"
+          echo "semver=${semver}" >> "$GITHUB_OUTPUT"
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: deploy/Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          tags: |
+            ghcr.io/apoorv-a/school-analytics:${{ steps.image.outputs.semver }}
+            ghcr.io/apoorv-a/school-analytics:${{ steps.image.outputs.ref }}

@@ -56,12 +56,13 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ## 6. Exact next step
 
-1. **Tag v1.3.0** (version bump + `docs/releases/v1.3.0.md` on main): `git tag v1.3.0 && git push origin v1.3.0` to publish the release image.
-2. **Conflict demo (local):** `PYTHONPATH=. python scripts/seed_import_conflict_demo.py` then Admin → Data import at `http://sunrise.localhost:8000/admin/import` — see [erp-import-conflicts-smoke.md](docs/operations/erp-import-conflicts-smoke.md) Path D.
-3. **Config repo (staging/prod):** `tenants/sunrise/dev.yaml` with `bulkImport: true`, `erp.webhookSecretRef`, `tenant_operator apply`, and `SA_SECRET_<REF>` in the deployment environment.
-4. **Deferred product:** bidirectional ERP sync and validate-only conflict **preview** before apply (`docs/product/phase2.md`).
-5. **Deferred schema:** Alembic cleanup to drop unused `parental_consent_records` from `014` (school-as-service; no in-app consent pilot).
-6. **ERP webhook / connector ops** (shipped docs): `docs/operations/erp-webhook-smoke.md`, `docs/operations/erp-connector-sync.md`.
+1. **Merge CI/release fixes on main** (greenlet in `requirements.lock`, lowercase GHCR tags in `release.yml`), confirm preflight + release workflow green, then **re-push `v1.3.0`** if the tag already pointed at a broken commit (`git tag -f v1.3.0 && git push -f origin v1.3.0`).
+2. **Config repo — dev:** bump `environments/dev/release.yaml` to `imageTag` / `operatorTag` **1.3.0**, commit; deploy via `sunrise_dev_v1.3.0` tag or dispatch after GHCR image `ghcr.io/apoorv-a/school-analytics:1.3.0` exists.
+3. **Config repo — stg/prod:** promote only after dev smoke (conflict UI, webhook, migrations through `016`); staging stays on **1.2.0** until promotion.
+4. **Tenant YAML:** `tenants/sunrise/dev.yaml` — `features.bulkImport: true`, `erp.webhookSecretRef`, matching `SA_SECRET_<REF>`; `tenant_operator apply`.
+5. **Deferred product:** bidirectional ERP sync and validate-only conflict **preview** before apply (`docs/product/phase2.md`).
+6. **Deferred schema:** Alembic cleanup to drop unused `parental_consent_records` from `014` (school-as-service; no in-app consent pilot).
+7. **Ops runbooks:** [erp-import-conflicts-smoke.md](docs/operations/erp-import-conflicts-smoke.md) (walkthrough done), [erp-webhook-smoke.md](docs/operations/erp-webhook-smoke.md), [erp-connector-sync.md](docs/operations/erp-connector-sync.md).
 
 ## 7. Anything the next agent must not change
 
