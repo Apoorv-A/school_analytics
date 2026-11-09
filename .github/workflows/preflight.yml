@@ -9,6 +9,8 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      SECRET_KEY: ci-test-secret
     steps:
       - uses: actions/checkout@v4
 
@@ -25,8 +27,6 @@ jobs:
       - name: Tests
         # Requires embedded config/ mirror; run locally with school-analytics-config checkout.
         run: PYTHONPATH=. pytest -q --ignore=tests/test_config_schema.py
-        env:
-          SECRET_KEY: ci-test-secret
 
       - name: Generate docs
         run: PYTHONPATH=. python scripts/docs_generate.py
