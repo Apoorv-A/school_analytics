@@ -1,0 +1,45 @@
+# Kind / local port-forward tenant for Sunrise (hostname matches seed and browser).
+# Validates against tenant_config; for the full demo dataset use seed.generate (see kind-helm-local.md).
+tenant:
+  key: sunrise
+  displayName: Sunrise Public School
+  hostname: sunrise.localhost
+  environment: dev
+
+school:
+  name: Sunrise Public School
+  city: Pune
+  board: CBSE
+
+academics:
+  passPercentage: 33.0
+  atRiskPercentage: 45.0
+  atRiskAttendance: 75.0
+
+features:
+  exports: true
+  remarks: true
+  parentPortal: true
+  studentPortal: true
+  bulkImport: true
+  interventions: false
+
+erp:
+  webhookSecretRef: sunrise/erp-webhook
+
+auth:
+  mfaEnabled: false
+  mfaRequiredRoles: []
+  sessionMaxAge: 28800
+
+telemetry:
+  captureRawPayloads: true
+  retention: forever
+
+resources:
+  replicas: 1
+  cpu: "500m"
+  memory: 1Gi
+
+image:
+  tag: 1.3.0
