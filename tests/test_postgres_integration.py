@@ -46,6 +46,7 @@ from app.db import (
     startup_ddl_enabled,
 )
 from app.models import School, Tenant
+from tests.test_migrations import HEAD_REVISION
 
 pytestmark = pytest.mark.postgres
 
@@ -189,7 +190,7 @@ class TestPostgresMigrations:
             revision = conn.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-        assert revision == "014_parental_consent"
+        assert revision == HEAD_REVISION
 
 
 class TestPostgresRlsIsolation:

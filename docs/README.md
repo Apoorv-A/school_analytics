@@ -24,6 +24,8 @@ Canonical documentation for the Python multi-tenant school analytics platform.
 | [operations/erp-connector-sync.md](operations/erp-connector-sync.md) | Scheduled ERP CSV sync (local drop, SFTP pull) |
 | [operations/erp-import-conflicts-smoke.md](operations/erp-import-conflicts-smoke.md) | Local walkthrough for ERP import conflict queue + resolution |
 | [operations/production-support-matrix.md](operations/production-support-matrix.md) | Supported versions, MFA, escalation, exclusions |
+| [operations/stg-regression-signoff.md](operations/stg-regression-signoff.md) | Staging tag deploy + QA sign-off before prod |
+| [operations/prod-deploy-runbook.md](operations/prod-deploy-runbook.md) | Prod `KUBECONFIG`, `sunrise_prod_v*` tag cut, smoke |
 | [onboarding/school-intake-checklist.md](onboarding/school-intake-checklist.md) | CSV templates, validate/apply, bootstrap admin |
 | [product/erp-strategy.md](product/erp-strategy.md) | ERP coexistence and ingest roadmap |
 | [releases/](releases/) | **Semver release notes** — deployable version history |

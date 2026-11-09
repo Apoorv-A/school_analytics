@@ -56,14 +56,16 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ## 6. Exact next step
 
-1. **CI (app `main`):** **preflight** green (`5113943f`, run `42564584453`). **supply-chain** green on prior `main` commit `f0c55fd` (`42564283644`); latest tip did not re-run supply-chain. **postgres-integration** failing on `5113943f` — triage separately if blocking.
-2. **v1.3.0 image** — `ghcr.io/apoorv-a/school-analytics:1.3.0` published. Optional: `CONFIG_REPO_PAT` + restore `tests/test_config_schema.py` in preflight; until then preflight skips that module.
-3. **Config repo — dev/stg:** `environments/{dev,stg}/release.yaml` pin **1.3.0** on `main`; **stg promote 1.3.0** done per operator. Confirm `tenants/sunrise/stg.yaml` `image.tag` is **1.3.0** and `sunrise_stg_v1.3.0` exists before prod.
-4. **Config repo — prod prep (done):** `5e6360c` on `main` — `environments/prod/release.yaml` + `tenants/sunrise/prod.yaml` → **1.3.0** only. **Next:** after stg regression green, cut `sunrise_prod_v1.3.0` (do not re-run `promote` — pins already bumped).
-5. **Tenant YAML:** `tenants/sunrise/dev.yaml` — `features.bulkImport: true`, `erp.webhookSecretRef`, matching `SA_SECRET_<REF>`; `tenant_operator apply`.
-6. **Deferred product:** bidirectional ERP sync and validate-only conflict **preview** before apply (`docs/product/phase2.md`).
-7. **Deferred schema:** Alembic cleanup to drop unused `parental_consent_records` from `014`.
-8. **Ops runbooks:** [erp-import-conflicts-smoke.md](docs/operations/erp-import-conflicts-smoke.md), [erp-webhook-smoke.md](docs/operations/erp-webhook-smoke.md), [erp-connector-sync.md](docs/operations/erp-connector-sync.md).
+**ERP product work is explicitly deferred** (bidirectional sync, conflict preview UI, webhook/connector expansion — see item 4). Prioritize ops gates below.
+
+1. **Staging sign-off:** [stg-regression-signoff.md](docs/operations/stg-regression-signoff.md) — bump `tenants/sunrise/stg.yaml` to `image.tag: 1.3.0` (remote `main` still had `1.0.0` while `environments/stg/release.yaml` is `1.3.0`), ensure **stg** `KUBECONFIG`, push tag `sunrise_stg_v1.3.0`, green **deploy** + **qa-regression**.
+2. **Production cut:** [prod-deploy-runbook.md](docs/operations/prod-deploy-runbook.md) — set **prod** environment secret `KUBECONFIG` (manual); then push `sunrise_prod_v1.3.0` (no `promote.yml`). Prior prod tag run failed: missing `KUBECONFIG`.
+3. **CI (app `main`):** **postgres-integration** was failing on stale Alembic head assertion (`014` vs `016`); fixed to use `HEAD_REVISION`. Re-run full CI on push.
+4. **Deferred product (ERP):** bidirectional ERP sync; validate-only conflict preview before apply — `docs/product/phase2.md`.
+5. **Deferred schema:** Alembic cleanup to drop unused `parental_consent_records` from `014`.
+6. **v1.3.0 image** — `ghcr.io/apoorv-a/school-analytics:1.3.0` published. Optional: `CONFIG_REPO_PAT` + restore `tests/test_config_schema.py` in preflight.
+7. **Tenant dev YAML:** `tenants/sunrise/dev.yaml` — `features.bulkImport: true`, `erp.webhookSecretRef`, matching `SA_SECRET_<REF>`; `tenant_operator apply`.
+8. **Ops runbooks (ERP smoke, optional until ERP resumes):** [erp-import-conflicts-smoke.md](docs/operations/erp-import-conflicts-smoke.md), [erp-webhook-smoke.md](docs/operations/erp-webhook-smoke.md), [erp-connector-sync.md](docs/operations/erp-connector-sync.md).
 
 ## 7. Anything the next agent must not change
 
