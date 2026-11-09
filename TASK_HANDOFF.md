@@ -56,13 +56,14 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ## 6. Exact next step
 
-1. **v1.3.0 image** — `ghcr.io/apoorv-a/school-analytics:1.3.0` published (release workflow green). Optional: wire a `CONFIG_REPO_PAT` secret and restore `tests/test_config_schema.py` in preflight (cross-repo checkout); until then preflight ignores that module.
-2. **Config repo — dev:** bump `environments/dev/release.yaml` to `imageTag` / `operatorTag` **1.3.0**, commit; deploy via `sunrise_dev_v1.3.0` tag or dispatch after GHCR image `ghcr.io/apoorv-a/school-analytics:1.3.0` exists.
-3. **Config repo — stg/prod:** promote only after dev smoke (conflict UI, webhook, migrations through `016`); staging stays on **1.2.0** until promotion.
-4. **Tenant YAML:** `tenants/sunrise/dev.yaml` — `features.bulkImport: true`, `erp.webhookSecretRef`, matching `SA_SECRET_<REF>`; `tenant_operator apply`.
-5. **Deferred product:** bidirectional ERP sync and validate-only conflict **preview** before apply (`docs/product/phase2.md`).
-6. **Deferred schema:** Alembic cleanup to drop unused `parental_consent_records` from `014` (school-as-service; no in-app consent pilot).
-7. **Ops runbooks:** [erp-import-conflicts-smoke.md](docs/operations/erp-import-conflicts-smoke.md) (walkthrough done), [erp-webhook-smoke.md](docs/operations/erp-webhook-smoke.md), [erp-connector-sync.md](docs/operations/erp-connector-sync.md).
+1. **CI (app `main`):** **preflight** green (`5113943f`, run `42564584453`). **supply-chain** green on prior `main` commit `f0c55fd` (`42564283644`); latest tip did not re-run supply-chain. **postgres-integration** failing on `5113943f` — triage separately if blocking.
+2. **v1.3.0 image** — `ghcr.io/apoorv-a/school-analytics:1.3.0` published. Optional: `CONFIG_REPO_PAT` + restore `tests/test_config_schema.py` in preflight; until then preflight skips that module.
+3. **Config repo — dev/stg:** `environments/{dev,stg}/release.yaml` pin **1.3.0** on `main`; **stg promote 1.3.0** done per operator. Confirm `tenants/sunrise/stg.yaml` `image.tag` is **1.3.0** and `sunrise_stg_v1.3.0` exists before prod.
+4. **Config repo — prod prep (done):** `5e6360c` on `main` — `environments/prod/release.yaml` + `tenants/sunrise/prod.yaml` → **1.3.0** only. **Next:** after stg regression green, cut `sunrise_prod_v1.3.0` (do not re-run `promote` — pins already bumped).
+5. **Tenant YAML:** `tenants/sunrise/dev.yaml` — `features.bulkImport: true`, `erp.webhookSecretRef`, matching `SA_SECRET_<REF>`; `tenant_operator apply`.
+6. **Deferred product:** bidirectional ERP sync and validate-only conflict **preview** before apply (`docs/product/phase2.md`).
+7. **Deferred schema:** Alembic cleanup to drop unused `parental_consent_records` from `014`.
+8. **Ops runbooks:** [erp-import-conflicts-smoke.md](docs/operations/erp-import-conflicts-smoke.md), [erp-webhook-smoke.md](docs/operations/erp-webhook-smoke.md), [erp-connector-sync.md](docs/operations/erp-connector-sync.md).
 
 ## 7. Anything the next agent must not change
 
