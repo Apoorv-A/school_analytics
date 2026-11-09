@@ -23,9 +23,13 @@ os.environ["DEBUG"] = "false"
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
+from app.config import settings  # noqa: E402
 from app.csrf import CSRF_COOKIE_NAME, CSRF_HEADER  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
 from app.main import app  # noqa: E402
+
+# CI has no .env; production defaults use Secure cookies that TestClient won't store.
+settings.session_cookie_secure = False
 from app.models import Role, Section, Student, Teacher, TeacherAssignment, User  # noqa: E402
 from seed.generate import DEMO_PASSWORD, SUNRISE_HOST, generate  # noqa: E402
 
