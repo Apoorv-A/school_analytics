@@ -20,7 +20,19 @@ Conflicts appear only when **ERP-scheduled paths** (`sync:*`, `webhook`) try to 
 | Login | Principal/admin at `http://sunrise.localhost:8000` (`Demo@12345` when `DEMO_MODE` matches seed) |
 | Host header | Browser uses `sunrise.localhost`; API tests use `Host: sunrise.localhost` |
 
-## Path A — Admin UI (fastest)
+## Path D — One-command demo (local SQLite)
+
+After migrations and seed (`python -m seed.generate` or existing Sunrise data):
+
+```bash
+PYTHONPATH=. python scripts/seed_import_conflict_demo.py
+```
+
+This enables `bulkImport` on Sunrise in SQLite if needed, creates assessment `DEMO-CONFLICT-UT`, queues one pending score conflict (`score-conflict-demo`: local **85** vs ERP **90**), and is safe to re-run (no duplicate pending rows).
+
+Open **Admin → Data import** at `http://sunrise.localhost:8000/admin/import` and resolve the row. Manual CSV steps below remain useful for understanding webhook apply.
+
+## Path A — Admin UI (manual CSV)
 
 ### 1. Seed a score from ERP, then edit locally
 
