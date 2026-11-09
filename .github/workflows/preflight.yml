@@ -22,12 +22,18 @@ jobs:
       - name: Install CI-only test deps
         run: pip install 'jsonschema[format]>=4.23,<5.0'
 
-      - name: Sync config repo for schema tests
+      - name: Checkout config repo for schema tests
+        uses: actions/checkout@v4
+        with:
+          repository: Apoorv-A/school-analytics-config
+          path: school-analytics-config
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Stage config tree for tests
         run: |
-          git clone --depth 1 https://github.com/Apoorv-A/school-analytics-config.git /tmp/school-analytics-config
           mkdir -p config
-          cp -r /tmp/school-analytics-config/schema config/schema
-          cp -r /tmp/school-analytics-config/tenants config/tenants
+          cp -r school-analytics-config/schema config/schema
+          cp -r school-analytics-config/tenants config/tenants
 
       - name: Ruff
         run: pip install ruff && ruff check app seed tests tenant_config tenant_operator scripts
