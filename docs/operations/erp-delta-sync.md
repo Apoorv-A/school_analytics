@@ -40,6 +40,8 @@ Principal CLI/upload apply (`source=cli|upload`) still overwrites — operators 
 
 Resolution strategies: **keep local**, **accept ERP**, or **per-field** merge on the conflicting columns. See [Phase 2 scope](../product/phase2.md).
 
+**Local smoke:** [ERP import conflicts walkthrough](./erp-import-conflicts-smoke.md).
+
 ## Related
 
 - [ERP connector sync](./erp-connector-sync.md)

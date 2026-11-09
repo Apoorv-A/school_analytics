@@ -56,9 +56,12 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ## 6. Exact next step
 
-1. **Bidirectional ERP / conflict preview** — extend beyond queued conflicts on apply (optional validate-only diff).
-2. **ERP webhook smoke** (shipped): `docs/operations/erp-webhook-smoke.md` when tenant `erp.webhookSecretRef` and `SA_SECRET_<REF>` are provisioned.
-3. **Scheduled connector sync** (shipped): `docs/operations/erp-connector-sync.md` — `sync --kind local`, `sync --kind sftp`, or `sync --kind rest` with `SA_SECRET_<REF>` credentials.
+1. **Config repo:** commit/push `tenants/sunrise/dev.yaml` (`bulkImport: true`, `erp.webhookSecretRef`) and run `tenant_operator apply` locally with matching `SA_SECRET_<REF>`.
+2. **Conflict smoke** (shipped): `docs/operations/erp-import-conflicts-smoke.md` — UI + API walkthrough after webhook/sync second apply.
+3. **Release v1.3.0** (not tagged yet): bump `app/__init__.py` / `pyproject.toml`, add `docs/releases/v1.3.0.md` (Phase 2 ERP slice: delta sync, conflicts, connectors), then `git tag v1.3.0 && git push origin v1.3.0`.
+4. **Deferred product:** bidirectional ERP sync and validate-only conflict **preview** before apply (`docs/product/phase2.md`).
+5. **Deferred schema:** Alembic cleanup to drop unused `parental_consent_records` from `014` (school-as-service; no in-app consent pilot).
+6. **ERP webhook / connector ops** (shipped docs): `docs/operations/erp-webhook-smoke.md`, `docs/operations/erp-connector-sync.md`.
 
 ## 7. Anything the next agent must not change
 
