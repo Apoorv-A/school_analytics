@@ -20,6 +20,7 @@ from app.schemas import FilterOptions, FilterParams
 from app.templating import templates
 from app.tenant.context import require_tenant_context
 from app.tenant.settings import TenantSettings
+from app.welcome import merge_welcome_into_context
 
 PORTAL_HOME: dict[Role, str] = {
     Role.ADMIN: "/admin",
@@ -34,9 +35,15 @@ _METRICS_GUIDE = {
     "icon": "\u2139",
 }
 
+_PORTAL_TOUR = {
+    "href": "/help/welcome",
+    "label": "Portal tour",
+    "icon": "\u2728",
+}
+
 _NAV_HELP_GROUP = {
     "title": "Help",
-    "items": [_METRICS_GUIDE],
+    "items": [_METRICS_GUIDE, _PORTAL_TOUR],
 }
 
 NAV: dict[Role, list[dict]] = {
@@ -271,6 +278,7 @@ def render_dashboard(
     }
     if extra:
         context.update(extra)
+    merge_welcome_into_context(request, context, scope.user)
     return templates.TemplateResponse(request, template, context)
 
 

@@ -1,5 +1,15 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="cards cards--grid" style="margin-bottom:16px">
+  {% set card = {
+    "key": "staff.intervention_status",
+    "title": "Case status mix",
+    "subtitle": "All intervention cases in the current filter scope.",
+    "span": 6,
+  } %}
+  {% include "components/_card.html" %}
+</div>
+
 <section class="card">
   <h2>Intervention queue</h2>
   <p class="muted">Open cases created from at-risk analytics. Log contacts and move cases to resolved when follow-up is complete.</p>

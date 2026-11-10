@@ -91,6 +91,13 @@ class RemarkCategory(enum.StrEnum):
         return self.value.capitalize()
 
 
+class RemarkVisibility(enum.StrEnum):
+    """Staff-only draft vs remark published to linked guardians."""
+
+    DRAFT = "draft"
+    PUBLISHED = "published"
+
+
 class Tenant(Base):
     """A school customer on the platform."""
 
@@ -575,6 +582,18 @@ class Remark(Base):
         Enum(RemarkCategory, native_enum=False), nullable=False
     )
     body: Mapped[str] = mapped_column(Text, nullable=False)
+    visibility: Mapped[RemarkVisibility] = mapped_column(
+        Enum(RemarkVisibility, native_enum=False),
+        nullable=False,
+        default=RemarkVisibility.DRAFT,
+    )
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    published_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", name="fk_remarks_published_by_user_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     external_id: Mapped[str | None] = mapped_column(String(64), index=True)
     source_system: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

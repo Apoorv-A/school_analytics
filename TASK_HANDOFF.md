@@ -77,15 +77,19 @@ curl -s -o /dev/null -w "%{http_code}\n" -H "Host: sunrise.localhost" http://127
 
 **F02 backlog done:** `CHART_GUIDES` for all `section.*` (10) and `student.*` (13, incl. `student.attendance_status`); tests `tests/test_f02_portal_chart_guides.py`.
 
-**F03 slice done:** composition doughnuts (`student.attendance_status`, grade mix meta), pass-rate gauge legend/totals, shared renderer + `tests/test_f03_doughnut_charts.py` (9). Student attendance page shows status mix card.
+**F03 slice done:** composition doughnuts (`student.attendance_status`, grade mix meta), pass-rate gauge legend/totals, shared renderer + `tests/test_f03_doughnut_charts.py` (13). Student attendance page shows status mix card; **`staff.intervention_status`** doughnut on `/admin/interventions` and `/teacher/interventions` when interventions are enabled.
 
-**Next product slice:** F03 remainder (intervention/leave mixes, responsive a11y gate); **F04** onboarding. Push `main` (2 commits ahead after F02/F03 commit). Optional: `docs/ai_delivery/` (**B00-01**).
+**F04 slice done (MVP + polish):** Role-aware optional welcome dialog after login (`app/welcome.py`, `POST /api/welcome/dismiss`, signed `sa_welcome_v1` cookie). Original SVG/CSS orbit motion; `prefers-reduced-motion` static; skip/finish; hidden during forced password change / MFA paths. **Polish:** Help → **Portal tour** (`GET /help/welcome` → portal home `?welcome=1`, bypasses dismiss cookie until Skip/finish); bottom-sheet mobile layout (`@media (max-width: 640px)`). Tests: `tests/test_f04_welcome.py` (11). Verify: dismiss welcome → sidebar **Portal tour** → modal returns; narrow viewport / student login → `?welcome=1` uses sheet-style panel.
+
+**F06 slice done (MVP):** Draft vs published on `remarks` (Alembic `017_remark_visibility`); teacher `POST /api/remarks` with `publish`, `POST /api/remarks/{id}/publish`; family `student.remarks` + concern counts published-only; `remark.published` audit. Seeded/imported remarks backfilled as published. Tests: `tests/test_f06_remarks_publication.py`. Verify: teacher draft → parent chart empty for that body; `publish: true` → parent sees item, no `visibility` in family JSON.
+
+**Next product slice:** **F06-03** teacher composer/parent published view polish; **F07** parent unread notices (not started); optional `docs/ai_delivery/` (**B00-01**); **F08** leave mix when prioritized.
 
 **ERP product work is explicitly deferred** (bidirectional sync, conflict preview UI, webhook/connector expansion — see item 5). Prioritize ops gates below.
 
 1. **Staging sign-off:** [stg-regression-signoff.md](docs/operations/stg-regression-signoff.md) — bump `tenants/sunrise/stg.yaml` to `image.tag: 1.3.0` (remote `main` still had `1.0.0` while `environments/stg/release.yaml` is `1.3.0`), ensure **stg** `KUBECONFIG`, push tag `sunrise_stg_v1.3.0`, green **deploy** + **qa-regression**.
 2. **Production cut:** [prod-deploy-runbook.md](docs/operations/prod-deploy-runbook.md) — set **prod** environment secret `KUBECONFIG` (manual); then push `sunrise_prod_v1.3.0` (no `promote.yml`). Prior prod tag run failed: missing `KUBECONFIG`.
-3. **CI (app `main`):** **postgres-integration** was failing on stale Alembic head assertion (`014` vs `016`); fixed to use `HEAD_REVISION`. Re-run full CI on push.
+3. **CI (app `main`):** **postgres-integration** uses `HEAD_REVISION` (`017_remark_visibility`); re-run full CI on push.
 4. **Deferred product (ERP):** bidirectional ERP sync; validate-only conflict preview before apply — `docs/product/phase2.md`.
 5. **Deferred schema:** Alembic cleanup to drop unused `parental_consent_records` from `014`.
 6. **v1.3.0 image** — `ghcr.io/apoorv-a/school-analytics:1.3.0` published. Optional: `CONFIG_REPO_PAT` + restore `tests/test_config_schema.py` in preflight.

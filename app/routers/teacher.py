@@ -271,24 +271,28 @@ def interventions_page(
     school = db.scalars(
         select(School).where(School.tenant_id == scope.tenant_id).limit(1)
     ).first()
+    interventions_context = {
+        "page_title": "Interventions",
+        "page_subtitle": "Follow up with at-risk students in your classes",
+        "active_nav": "/teacher/interventions",
+        "current_user": scope.user,
+        "school": school,
+        "nav_groups": portal_nav(scope.role, require_tenant_context().settings),
+        "portal_home": PORTAL_HOME[scope.role],
+        "visible_filters": CLASSROOM_FILTERS,
+        "rendered_filters": [],
+        "pinned_filters": {"section_id": str(section_id)},
+        "filters": filters,
+        "filter_options": filter_options(db, scope),
+        "at_risk_chart_key": "section.at_risk",
+    }
+    from app.welcome import merge_welcome_into_context
+
+    merge_welcome_into_context(request, interventions_context, scope.user)
     return templates.TemplateResponse(
         request,
         "interventions.html",
-        {
-            "page_title": "Interventions",
-            "page_subtitle": "Follow up with at-risk students in your classes",
-            "active_nav": "/teacher/interventions",
-            "current_user": scope.user,
-            "school": school,
-            "nav_groups": portal_nav(scope.role, require_tenant_context().settings),
-            "portal_home": PORTAL_HOME[scope.role],
-            "visible_filters": CLASSROOM_FILTERS,
-            "rendered_filters": [],
-            "pinned_filters": {"section_id": str(section_id)},
-            "filters": filters,
-            "filter_options": filter_options(db, scope),
-            "at_risk_chart_key": "section.at_risk",
-        },
+        interventions_context,
     )
 
 

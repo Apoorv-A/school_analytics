@@ -631,6 +631,32 @@ _METRIC_LIST: list[MetricDef] = [
         family_safe=False,
     ),
     MetricDef(
+        id="staff.intervention_status_mix",
+        label="Intervention case status mix",
+        kind=MetricKind.DERIVED,
+        audience=STAFF,
+        chart_keys=("staff.intervention_status",),
+        kpi_card_labels=(),
+        summary=(
+            "Mutually exclusive counts of open, in progress, and resolved "
+            "intervention cases."
+        ),
+        numerator_denominator="count per status",
+        inclusion="Intervention cases in filter scope",
+        exclusion="—",
+        filter_semantics=(
+            "``require_interventions_enabled``; class, grade, and student filters "
+            "narrow the student cohort."
+        ),
+        reporting_period="All cases in scope (not limited by term)",
+        data_source="``intervention_cases``",
+        implementation=(
+            "app.analytics.charts:staff_intervention_status",
+            "app.analytics.queries:intervention_case_status_counts",
+        ),
+        family_safe=False,
+    ),
+    MetricDef(
         id="enrollment.class_students_count",
         label="Students (class)",
         kind=MetricKind.KPI,
@@ -1020,14 +1046,36 @@ def _student_guides() -> dict[str, ChartGuide]:
     }
 
 
+def _staff_guides() -> dict[str, ChartGuide]:
+    shared_filters = (
+        "Grade, class, and student filters narrow which learners' cases are counted. "
+        "Requires the interventions feature."
+    )
+    return {
+        "staff.intervention_status": ChartGuide(
+            purpose="Share of intervention cases in each workflow status.",
+            x_axis="Status category",
+            y_axis="Case count",
+            aggregation=(
+                "Counts of open, in progress, and resolved cases from "
+                "``intervention_cases`` in the active scope."
+            ),
+            filter_behavior=shared_filters,
+            limitations="Staff portals only; hidden when interventions are disabled.",
+        ),
+    }
+
+
 _SCHOOL_CHART_GUIDES = _school_guides()
 _SECTION_CHART_GUIDES = _section_guides()
 _STUDENT_CHART_GUIDES = _student_guides()
+_STAFF_CHART_GUIDES = _staff_guides()
 
 CHART_GUIDES: dict[str, ChartGuide] = {
     **_SCHOOL_CHART_GUIDES,
     **_SECTION_CHART_GUIDES,
     **_STUDENT_CHART_GUIDES,
+    **_STAFF_CHART_GUIDES,
 }
 
 PRINCIPAL_CHART_KEYS: frozenset[str] = frozenset(_SCHOOL_CHART_GUIDES)

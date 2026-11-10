@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 import random
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -27,6 +27,7 @@ from app.models import (
     Grade,
     Remark,
     RemarkCategory,
+    RemarkVisibility,
     Role,
     School,
     Score,
@@ -704,6 +705,8 @@ def generate(reset: bool = False) -> dict[str, object]:
                             term_id=term.id,
                             category=category,
                             body=rng.choice(remark_templates[category]),
+                            visibility=RemarkVisibility.PUBLISHED,
+                            published_at=datetime.now(UTC),
                         )
                     )
                     remark_count += 1

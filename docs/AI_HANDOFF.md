@@ -64,7 +64,7 @@ Analytics is a **school-provided service** to families under the school’s poli
 | `app/import_/history.py` | Import run audit log (`import_runs` table) |
 | `app/audit.py` | Append-only security audit events (`security_audit_events` table) |
 | `app/routers/students.py` | Admin student search (`GET /api/students/search`) |
-| `app/routers/remarks.py` | Teacher remark POST (`POST /api/remarks`) |
+| `app/routers/remarks.py` | Teacher remarks: `POST /api/remarks` (draft or `publish`), `POST /api/remarks/{id}/publish`; family charts see published only |
 | `app/db.py` | SQLAlchemy engine; SQLite `NullPool` locally, pooled Postgres in production |
 | `app/deps.py` | Auth + `AccessScope` |
 | `app/analytics/` | Metrics, scoped queries, chart registry |
@@ -324,6 +324,7 @@ Tracked against the authoritative `school_platform_ai_handoff.md`; do not treat 
 - **Password reset:** `GET/POST /forgot-password` (generic response, rate-limited); `GET/POST /reset-password?token=…` (single-use SHA-256 hashed tokens in `password_reset_tokens`, default 1 h TTL). Admin: `POST /api/admin/users/{user_id}/password-reset` returns `resetToken` once (no email delivery in v1).
 - **Forced password change:** `users.must_change_password` set on CSV import temp passwords; middleware redirects to `GET/POST /change-password` until cleared. Session cookie includes `sv` (`session_version`); password change/reset increments it and invalidates older cookies. Login throttle: `app/throttle.py` (`LOGIN_THROTTLE_BACKEND=memory` default; `redis` when `LOGIN_THROTTLE_REDIS_URL` set). Trusted proxy: `TRUSTED_PROXY=true` enables `X-Forwarded-For` via `TrustedProxyMiddleware`.
 - **Admin invite:** `POST /api/admin/users/invite` creates a user with a one-time `tempPassword`, `activationToken` (password-reset flow), and `must_change_password=true`.
+- **Welcome (F04):** First portal visit per browser may show an optional role-aware `<dialog>` (`app/welcome.py`, `welcome.js`). Dismiss via **Skip** → `POST /api/welcome/dismiss` sets signed cookie `sa_welcome_v1`. Re-open from Help → **Portal tour** (`GET /help/welcome` → home `?welcome=1`). Suppressed during forced password change / MFA enrolment. Respects `prefers-reduced-motion`; mobile uses bottom-sheet CSS at 640px.
 
 ---
 

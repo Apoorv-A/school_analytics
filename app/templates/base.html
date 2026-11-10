@@ -79,5 +79,9 @@
 <script src="/static/js/filters.js"></script>
 <script src="/static/js/charts.js"></script>
 <script src="/static/js/chart_info.js"></script>
+{% include "components/_welcome.html" %}
+{% if welcome and welcome.show %}
+<script src="/static/js/welcome.js" defer></script>
+{% endif %}
 </body>
 </html>

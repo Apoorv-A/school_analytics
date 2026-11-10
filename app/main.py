@@ -35,6 +35,7 @@ from app.routers import (
     students,
     teacher,
     teacher_students,
+    welcome,
 )
 from app.routers.auth import clear_session_cookie
 from app.templating import templates
@@ -117,6 +118,7 @@ app.include_router(import_api.router)
 app.include_router(import_mapping.router)
 app.include_router(import_conflicts.router)
 app.include_router(erp_webhook.router)
+app.include_router(welcome.router)
 
 
 @app.middleware("http")

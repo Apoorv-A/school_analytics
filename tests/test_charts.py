@@ -606,7 +606,7 @@ class TestFiltersApplyEverywhere:
         from sqlalchemy import select
 
         from app.db import SessionLocal
-        from app.models import AcademicYear, Remark, RemarkCategory, Student
+        from app.models import AcademicYear, Remark, RemarkCategory, RemarkVisibility, Student
 
         year = db.scalars(select(AcademicYear).order_by(AcademicYear.id).limit(1)).one()
         child_id = parent_context["child_id"]
@@ -635,6 +635,7 @@ class TestFiltersApplyEverywhere:
                     teacher_id=None,
                     term_id=None,
                     category=RemarkCategory.ACADEMIC,
+                    visibility=RemarkVisibility.PUBLISHED,
                     body=marker,
                     created_at=written_at,
                 )
@@ -1044,7 +1045,7 @@ class TestExports:
         from sqlalchemy import select
 
         from app.db import SessionLocal
-        from app.models import Remark, RemarkCategory, Student, Term
+        from app.models import Remark, RemarkCategory, RemarkVisibility, Student, Term
 
         child_id = parent_context["child_id"]
         child = db.get(Student, child_id)
@@ -1063,6 +1064,7 @@ class TestExports:
                 teacher_id=None,
                 term_id=term_id,
                 category=RemarkCategory.CONCERN,
+                visibility=RemarkVisibility.PUBLISHED,
                 body=payload,
             )
             session.add(remark)

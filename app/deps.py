@@ -141,6 +141,11 @@ class AccessScope:
         return self.user.role is Role.ADMIN
 
     @property
+    def remarks_family_view_only(self) -> bool:
+        """True when chart/API responses must hide staff-only draft remarks."""
+        return self.role in (Role.PARENT, Role.STUDENT)
+
+    @property
     def academic_year_id(self) -> int | None:
         return self.academic_year.id if self.academic_year else None
 

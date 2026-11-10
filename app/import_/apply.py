@@ -7,7 +7,7 @@ import re
 import secrets
 import tempfile
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from fastapi import UploadFile
@@ -37,6 +37,7 @@ from app.models import (
     ImportConflictEntityType,
     Remark,
     RemarkCategory,
+    RemarkVisibility,
     Role,
     School,
     Score,
@@ -1035,6 +1036,7 @@ def _apply_remarks(
                         existing.source_system = data.source_system
                     count += 1
                     continue
+            imported_at = datetime.now(UTC)
             db.add(
                 Remark(
                     tenant_id=tenant_id,
@@ -1046,6 +1048,8 @@ def _apply_remarks(
                     body=data.body,
                     external_id=data.external_id,
                     source_system=data.source_system,
+                    visibility=RemarkVisibility.PUBLISHED,
+                    published_at=imported_at,
                 )
             )
             count += 1

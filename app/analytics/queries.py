@@ -33,6 +33,8 @@ from app.models import (
     Attendance,
     AttendanceStatus,
     Grade,
+    InterventionCase,
+    InterventionStatus,
     Remark,
     RemarkCategory,
     Score,
@@ -698,8 +700,15 @@ def _remark_filter_conditions(
 
 
 def student_remarks(
-    db: Session, student_id: int, filters: FilterParams, tenant_id: uuid.UUID
+    db: Session,
+    student_id: int,
+    filters: FilterParams,
+    tenant_id: uuid.UUID,
+    *,
+    family_view_only: bool = False,
 ) -> list[dict[str, object]]:
+    from app.models import RemarkVisibility
+
     stmt = (
         select(Remark, Term.name, User.full_name, Subject.name)
         .outerjoin(
@@ -712,23 +721,28 @@ def student_remarks(
         .where(Remark.student_id == student_id, Remark.tenant_id == tenant_id)
         .order_by(Remark.created_at.desc(), Remark.id.desc())
     )
+    if family_view_only:
+        stmt = stmt.where(Remark.visibility == RemarkVisibility.PUBLISHED)
     remark_filters = _remark_filter_conditions(filters, db)
     if remark_filters:
         stmt = stmt.where(*remark_filters)
 
     rows: list[dict[str, object]] = []
     for remark, term_name, teacher_name, subject_name in db.execute(stmt).all():
-        rows.append(
-            {
-                "id": remark.id,
-                "category": remark.category.label,
-                "category_key": remark.category.value,
-                "body": remark.body,
-                "term": term_name or "--",
-                "teacher": teacher_name or "School office",
-                "subject": subject_name or "General",
-            }
-        )
+        item: dict[str, object] = {
+            "id": remark.id,
+            "category": remark.category.label,
+            "category_key": remark.category.value,
+            "body": remark.body,
+            "term": term_name or "--",
+            "teacher": teacher_name or "School office",
+            "subject": subject_name or "General",
+        }
+        if not family_view_only:
+            item["visibility"] = remark.visibility.value
+            if remark.published_at is not None:
+                item["published_at"] = remark.published_at.isoformat()
+        rows.append(item)
     return rows
 
 
@@ -1548,10 +1562,13 @@ def _concern_remark_counts(
 ) -> dict[int, int]:
     if not student_ids:
         return {}
+    from app.models import RemarkVisibility
+
     conditions: list[ColumnElement[bool]] = [
         Remark.student_id.in_(student_ids),
         Remark.tenant_id == tenant_id,
         Remark.category == RemarkCategory.CONCERN,
+        Remark.visibility == RemarkVisibility.PUBLISHED,
     ]
     cutoff = datetime.now(UTC) - timedelta(days=days)
     conditions.append(Remark.created_at >= cutoff)
@@ -1621,7 +1638,13 @@ def build_student_insights(
                 "poor attendance often correlates with weaker results."
             )
 
-    remarks = student_remarks(db, student.id, filters, scope.tenant_id)
+    remarks = student_remarks(
+        db,
+        student.id,
+        filters,
+        scope.tenant_id,
+        family_view_only=False,
+    )
     recent_remarks = [
         r for r in remarks if r["category_key"] in ("concern", "academic")
     ][:3]
@@ -1745,6 +1768,65 @@ def build_parent_insight_summary(
 # --------------------------------------------------------------------------- #
 # Filter options
 # --------------------------------------------------------------------------- #
+
+
+# --------------------------------------------------------------------------- #
+# Interventions
+# --------------------------------------------------------------------------- #
+
+
+def intervention_case_status_counts(
+    db: Session,
+    filters: FilterParams,
+    scope: AccessScope,
+) -> dict[str, int]:
+    """Count intervention cases per workflow status for the active scope."""
+    stmt = (
+        select(
+            InterventionCase.status,
+            func.count(InterventionCase.id).label("cases"),
+        )
+        .where(InterventionCase.tenant_id == scope.tenant_id)
+        .group_by(InterventionCase.status)
+    )
+    joined_student = False
+
+    def _join_student() -> None:
+        nonlocal stmt, joined_student
+        if not joined_student:
+            stmt = stmt.join(Student, InterventionCase.student_id == Student.id)
+            joined_student = True
+
+    if scope.student_ids is not None:
+        if not scope.student_ids:
+            return {status.value: 0 for status in InterventionStatus}
+        _join_student()
+        stmt = stmt.where(Student.id.in_(scope.student_ids))
+    elif scope.section_ids is not None:
+        _join_student()
+        stmt = stmt.where(Student.section_id.in_(scope.section_ids or {-1}))
+
+    section_ids = filters.resolved_section_ids() or []
+    if section_ids:
+        _join_student()
+        stmt = stmt.where(Student.section_id.in_(section_ids))
+
+    if filters.grade_id is not None:
+        _join_student()
+        stmt = stmt.join(Section, Student.section_id == Section.id).where(
+            Section.grade_id == filters.grade_id
+        )
+
+    if filters.student_id is not None:
+        scope.assert_student(filters.student_id)
+        _join_student()
+        stmt = stmt.where(Student.id == filters.student_id)
+
+    counts = {status.value: 0 for status in InterventionStatus}
+    for row in db.execute(stmt).all():
+        status_key = row.status.value
+        counts[status_key] = int(row.cases)
+    return counts
 
 
 def filter_options(db: Session, scope: AccessScope) -> FilterOptions:

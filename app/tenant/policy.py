@@ -24,6 +24,7 @@ INTERVENTION_CHART_KEYS = frozenset(
         "staff.intervention_uncovered",
         "staff.interventions_open",
         "staff.intervention_outcomes",
+        "staff.intervention_status",
     }
 )
 

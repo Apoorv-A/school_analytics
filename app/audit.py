@@ -47,6 +47,7 @@ class SecurityAuditAction:
     EXPORT_DOWNLOAD = "data.export.download"
     IMPORT_APPLY = "data.import.apply"
     CHART_ACCESS = "data.chart.access"
+    REMARK_PUBLISHED = "remark.published"
 
 
 class SecurityAuditTarget:
@@ -58,6 +59,7 @@ class SecurityAuditTarget:
     EXPORT = "export"
     IMPORT = "import"
     CHART = "chart"
+    REMARK = "remark"
 
 
 SENSITIVE_CHART_KEYS = frozenset(

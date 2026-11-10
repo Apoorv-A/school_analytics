@@ -43,3 +43,4 @@ Generated from `app/analytics/charts.py`. Do not edit by hand.
 | `staff.intervention_uncovered` | Flagged pupils with no plan | table | admin, teacher |
 | `staff.interventions_open` | Open intervention cases | table | admin, teacher |
 | `staff.intervention_outcomes` | Closed intervention outcomes | table | admin, teacher |
+| `staff.intervention_status` | Intervention case status mix | chart | admin, teacher |

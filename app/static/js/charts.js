@@ -32,6 +32,11 @@
     Late: "#f59e0b",
     Excused: "#0ea5e9",
   };
+  const INTERVENTION_COLORS = {
+    Open: "#f59e0b",
+    "In progress": "#0ea5e9",
+    Resolved: "#10b981",
+  };
   const PASS_RATE_COLORS = ["#10b981", "#e2e8f0"];
   const GRID = "rgba(148, 163, 184, 0.18)";
   const TICK = "#64748b";
@@ -116,6 +121,11 @@
     if (paletteKey === "pass_rate") {
       return labels.map(function (_label, index) {
         return (PASS_RATE_COLORS[index] || PALETTE[index % PALETTE.length]) + "dd";
+      });
+    }
+    if (paletteKey === "intervention") {
+      return labels.map(function (label, index) {
+        return (INTERVENTION_COLORS[label] || PALETTE[index % PALETTE.length]) + "dd";
       });
     }
     return labels.map(function (_label, index) {

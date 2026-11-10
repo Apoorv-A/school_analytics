@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.analytics import metrics, queries
 from app.deps import AccessScope
-from app.models import AttendanceStatus, Role, Student
+from app.models import AttendanceStatus, InterventionStatus, Role, Student
 from app.schemas import FilterParams
 from app.tenant.features import require_interventions_enabled, require_remarks_enabled
 
@@ -501,7 +501,11 @@ def student_remarks(db: Session, filters: FilterParams, scope: AccessScope) -> d
     return {
         "kind": "timeline",
         "items": queries.student_remarks(
-            db, student.id, filters, scope.tenant_id
+            db,
+            student.id,
+            filters,
+            scope.tenant_id,
+            family_view_only=scope.remarks_family_view_only,
         ),
         "meta": {"student": student.full_name},
     }
@@ -1125,6 +1129,24 @@ def staff_intervention_outcomes(
     )
 
 
+def staff_intervention_status(
+    db: Session, filters: FilterParams, scope: AccessScope
+) -> dict:
+    """Composition of intervention cases by workflow status."""
+    require_interventions_enabled()
+    detail = queries.intervention_case_status_counts(db, filters, scope)
+    labels = [status.label for status in InterventionStatus]
+    counts = [int(detail.get(status.value, 0) or 0) for status in InterventionStatus]
+    return _composition_doughnut(
+        labels=labels,
+        counts=counts,
+        series_label="Cases",
+        unit="cases",
+        palette="intervention",
+        basis="All intervention cases in the current filter scope, grouped by status.",
+    )
+
+
 def school_teacher_effectiveness(
     db: Session, filters: FilterParams, scope: AccessScope
 ) -> dict:
@@ -1244,6 +1266,12 @@ CHART_DEFS: tuple[ChartDef, ...] = (
     ChartDef(
         "staff.intervention_outcomes", "Closed intervention outcomes", STAFF,
         staff_intervention_outcomes, "table",
+    ),
+    ChartDef(
+        "staff.intervention_status",
+        "Intervention case status mix",
+        STAFF,
+        staff_intervention_status,
     ),
 )
 

@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.analytics.charts import _composition_doughnut
-from app.models import Term
+from app.models import (
+    InterventionCase,
+    InterventionPriority,
+    InterventionStatus,
+    Tenant,
+    Term,
+)
 from seed.generate import SUNRISE_HOST
 
 DEFAULT_HEADERS = {"Host": SUNRISE_HOST}
@@ -110,3 +117,69 @@ def test_charts_js_exposes_composition_helpers(admin_client):
     assert "composition-chart" in text
     assert "appendCompositionTable" in text
     assert "GRADE_COLORS" in text
+    assert "INTERVENTION_COLORS" in text
+
+
+def _enable_interventions(db, *, tenant_key: str = "sunrise") -> None:
+    tenant = db.scalars(select(Tenant).where(Tenant.key == tenant_key)).one()
+    settings = dict(tenant.settings_json or {})
+    features = dict(settings.get("features") or {})
+    features["interventions"] = True
+    settings["features"] = features
+    tenant.settings_json = settings
+    flag_modified(tenant, "settings_json")
+    db.commit()
+
+
+@pytest.fixture
+def interventions_enabled(db):
+    _enable_interventions(db)
+    yield
+
+
+def test_staff_intervention_status_composition_reconciles(
+    admin_client, db, interventions_enabled
+):
+    from tests.test_interventions import _at_risk_student_without_case
+
+    student = _at_risk_student_without_case(db)
+    tenant = db.scalars(select(Tenant).where(Tenant.key == "sunrise")).one()
+    db.add(
+        InterventionCase(
+            tenant_id=tenant.id,
+            student_id=student.id,
+            signal_source="test",
+            reason_summary="F03 status mix",
+            priority=InterventionPriority.MEDIUM,
+            status=InterventionStatus.OPEN,
+        )
+    )
+    db.commit()
+
+    payload = admin_client.get(
+        "/api/charts/staff.intervention_status",
+        headers=DEFAULT_HEADERS,
+    ).json()
+    assert payload["kind"] == "doughnut"
+    assert "composition" in payload["meta"]
+    if payload["meta"]["total"]:
+        _assert_composition_reconciles(payload)
+
+
+def test_chart_info_staff_intervention_status_includes_guide(
+    admin_client, interventions_enabled
+):
+    response = admin_client.get(
+        "/api/charts/staff.intervention_status/info",
+        headers=DEFAULT_HEADERS,
+    )
+    assert response.status_code == 200
+    guide = response.json()["chartGuide"]
+    assert "status" in guide["purpose"].lower()
+    assert guide["aggregation"]
+
+
+def test_interventions_page_wires_status_doughnut(admin_client, interventions_enabled):
+    response = admin_client.get("/admin/interventions", headers=DEFAULT_HEADERS)
+    assert response.status_code == 200
+    assert 'data-chart="staff.intervention_status"' in response.text

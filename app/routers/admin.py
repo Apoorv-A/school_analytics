@@ -263,21 +263,25 @@ def _render(
         school = db.scalars(
             select(School).where(School.tenant_id == scope.tenant_id).limit(1)
         ).first()
+        import_context = {
+            "page_title": page["title"],
+            "page_subtitle": page.get("subtitle"),
+            "active_nav": "/admin/import",
+            "current_user": scope.user,
+            "school": school,
+            "nav_groups": portal_nav(scope.role, tenant_settings),
+            "portal_home": PORTAL_HOME[scope.role],
+            "import_runs": runs,
+            "pending_mappings": pending_mappings,
+            "pending_conflicts": pending_conflicts,
+        }
+        from app.welcome import merge_welcome_into_context
+
+        merge_welcome_into_context(request, import_context, scope.user)
         return templates.TemplateResponse(
             request,
             page.get("template", "import.html"),
-            {
-                "page_title": page["title"],
-                "page_subtitle": page.get("subtitle"),
-                "active_nav": "/admin/import",
-                "current_user": scope.user,
-                "school": school,
-                "nav_groups": portal_nav(scope.role, tenant_settings),
-                "portal_home": PORTAL_HOME[scope.role],
-                "import_runs": runs,
-                "pending_mappings": pending_mappings,
-                "pending_conflicts": pending_conflicts,
-            },
+            import_context,
         )
     return render_dashboard(
         request,
@@ -438,24 +442,28 @@ def interventions_page(
     school = db.scalars(
         select(School).where(School.tenant_id == scope.tenant_id).limit(1)
     ).first()
+    interventions_context = {
+        "page_title": "Interventions",
+        "page_subtitle": "Turn at-risk signals into tracked follow-up cases",
+        "active_nav": "/admin/interventions",
+        "current_user": scope.user,
+        "school": school,
+        "nav_groups": portal_nav(scope.role, require_tenant_context().settings),
+        "portal_home": PORTAL_HOME[scope.role],
+        "visible_filters": SCHOOL_FILTERS,
+        "rendered_filters": [],
+        "pinned_filters": {},
+        "filters": filters,
+        "filter_options": filter_options(db, scope),
+        "at_risk_chart_key": "school.at_risk",
+    }
+    from app.welcome import merge_welcome_into_context
+
+    merge_welcome_into_context(request, interventions_context, scope.user)
     return templates.TemplateResponse(
         request,
         "interventions.html",
-        {
-            "page_title": "Interventions",
-            "page_subtitle": "Turn at-risk signals into tracked follow-up cases",
-            "active_nav": "/admin/interventions",
-            "current_user": scope.user,
-            "school": school,
-            "nav_groups": portal_nav(scope.role, require_tenant_context().settings),
-            "portal_home": PORTAL_HOME[scope.role],
-            "visible_filters": SCHOOL_FILTERS,
-            "rendered_filters": [],
-            "pinned_filters": {},
-            "filters": filters,
-            "filter_options": filter_options(db, scope),
-            "at_risk_chart_key": "school.at_risk",
-        },
+        interventions_context,
     )
 
 

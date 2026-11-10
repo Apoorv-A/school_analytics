@@ -1,0 +1,37 @@
+{% if welcome and welcome.show %}
+<dialog
+  id="portal-welcome"
+  class="welcome-dialog no-print"
+  aria-labelledby="welcome-headline"
+  aria-describedby="welcome-lead"
+  data-role="{{ welcome.role_key }}"
+>
+  <div class="welcome-dialog__panel">
+    <header class="welcome-dialog__head">
+      <div class="welcome-dialog__visual" aria-hidden="true">
+        <svg class="welcome-orbit" viewBox="0 0 120 120" focusable="false">
+          <circle class="welcome-orbit__ring" cx="60" cy="60" r="48"/>
+          <circle class="welcome-orbit__core" cx="60" cy="60" r="18"/>
+          <circle class="welcome-orbit__satellite" cx="60" cy="18" r="8"/>
+        </svg>
+      </div>
+      <div class="welcome-dialog__copy">
+        <h2 id="welcome-headline" class="welcome-dialog__title">{{ welcome.headline }}</h2>
+        <p id="welcome-lead" class="welcome-dialog__lead">{{ welcome.lead }}</p>
+      </div>
+    </header>
+    <ol class="welcome-steps">
+      {% for step in welcome.steps %}
+        <li class="welcome-steps__item">
+          <strong>{{ step.title }}</strong>
+          <span>{{ step.body }}</span>
+        </li>
+      {% endfor %}
+    </ol>
+    <footer class="welcome-dialog__foot">
+      <button type="button" class="btn" data-welcome-skip>Skip for now</button>
+      <button type="button" class="btn btn--primary" data-welcome-finish>{{ welcome.finish_label }}</button>
+    </footer>
+  </div>
+</dialog>
+{% endif %}

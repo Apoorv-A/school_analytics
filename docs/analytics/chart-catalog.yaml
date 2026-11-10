@@ -241,3 +241,9 @@ charts:
   roles:
   - admin
   - teacher
+- key: staff.intervention_status
+  title: Intervention case status mix
+  kind: chart
+  roles:
+  - admin
+  - teacher
