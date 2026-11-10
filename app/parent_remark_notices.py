@@ -105,6 +105,7 @@ def list_unread_remark_previews(db: Session, scope: AccessScope) -> list[dict[st
                 "category": remark.category.value,
                 "category_label": remark.category.label,
                 "body_preview": body,
+                "term_id": remark.term_id,
                 "term": term_name or "\u2014",
                 "teacher": teacher_name or "School office",
                 "published_at": published.isoformat(),

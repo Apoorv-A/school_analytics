@@ -219,6 +219,13 @@ def build_student_portal(prefix: str, role: Role, tag: str) -> APIRouter:
         child = scope.resolve_student(filters.student_id)
         filters = filters.with_student(child.id)
 
+        child_section = child.section
+        child_grade_section = (
+            f"{child_section.grade.name} {child_section.name}"
+            if child_section is not None
+            else ""
+        )
+
         return render_dashboard(
             request,
             db,
@@ -237,10 +244,20 @@ def build_student_portal(prefix: str, role: Role, tag: str) -> APIRouter:
             template="student_portal.html",
             extra={
                 "children": [
-                    {"id": s.id, "name": s.full_name, "current": s.id == child.id}
+                    {
+                        "id": s.id,
+                        "name": s.full_name,
+                        "current": s.id == child.id,
+                        "grade_section": (
+                            f"{s.section.grade.name} {s.section.name}"
+                            if s.section is not None
+                            else ""
+                        ),
+                    }
                     for s in scope.students
                 ],
                 "child": child,
+                "child_grade_section": child_grade_section,
                 "page_prefix": prefix,
             },
         )

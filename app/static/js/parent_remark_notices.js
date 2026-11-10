@@ -91,8 +91,12 @@
       var body = el("p", "remark-notices-item__body", item.body_preview || "");
       var actions = el("div", "remark-notices-item__actions");
       var view = el("a", "btn btn--small", "View remarks");
-      view.href =
-        "/parent/remarks?student_id=" + encodeURIComponent(String(item.student_id));
+      var viewParams = new URLSearchParams();
+      viewParams.set("student_id", String(item.student_id));
+      if (item.term_id) {
+        viewParams.set("term_id", String(item.term_id));
+      }
+      view.href = "/parent/remarks?" + viewParams.toString();
       var mark = el("button", "btn btn--small", "Mark read");
       mark.type = "button";
       mark.setAttribute("data-remark-id", String(item.id));
@@ -105,6 +109,13 @@
     });
   }
 
+  function refreshRemarksTimeline() {
+    if (!window.location.pathname.startsWith("/parent/remarks")) return;
+    if (window.SchoolCharts && typeof window.SchoolCharts.refreshAll === "function") {
+      window.SchoolCharts.refreshAll();
+    }
+  }
+
   function refreshCount() {
     return fetch("/api/parent/remark-notices/count", {
       credentials: "same-origin",
@@ -115,7 +126,11 @@
         return res.json();
       })
       .then(function (data) {
-        if (data && typeof data.count === "number") setCount(data.count);
+        if (data && typeof data.count === "number") {
+          var hadBadge = badge && !badge.hidden;
+          setCount(data.count);
+          if (data.count > 0 && !hadBadge) refreshRemarksTimeline();
+        }
       })
       .catch(function () { /* non-blocking */ });
   }
@@ -158,10 +173,14 @@
   }
 
   function openDrawer() {
-    loadDrawer().finally(function () {
-      dialog.show();
-      if (closeBtn) closeBtn.focus();
-    });
+    loadDrawer()
+      .then(function () {
+        refreshRemarksTimeline();
+      })
+      .finally(function () {
+        dialog.show();
+        if (closeBtn) closeBtn.focus();
+      });
   }
 
   openBtn.addEventListener("click", openDrawer);

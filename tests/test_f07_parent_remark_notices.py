@@ -74,7 +74,10 @@ class TestParentRemarkNotices:
         assert after_pub["count"] == before + 1
 
         listed = client.get("/api/parent/remark-notices").json()
-        assert any(i["id"] == remark_id and marker in i["body_preview"] for i in listed["items"])
+        match = next(
+            i for i in listed["items"] if i["id"] == remark_id and marker in i["body_preview"]
+        )
+        assert match.get("term_id") is not None
 
         marked = client.post(
             "/api/parent/remark-notices/mark-read",

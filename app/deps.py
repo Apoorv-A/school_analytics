@@ -415,8 +415,11 @@ def get_access_scope(
                     Student.tenant_id == tenant_id,
                     Student.is_active.is_(True),
                 )
+                .options(
+                    joinedload(Student.section).joinedload(Section.grade),
+                )
                 .order_by(Student.full_name)
-            )
+            ).unique()
         )
         return AccessScope(
             tenant_id=tenant_id,

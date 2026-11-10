@@ -177,6 +177,17 @@
     return document.querySelector(".child-switch") !== null;
   }
 
+  function portalStudentFilterPresent() {
+    return (
+      (window.location.pathname === "/parent"
+        || window.location.pathname.startsWith("/parent/")
+        || window.location.pathname === "/student"
+        || window.location.pathname.startsWith("/student/"))
+      && form
+      && form.querySelector('[data-filter="student_id"]') !== null
+    );
+  }
+
   function navigateWithCurrentFilters() {
     const query = queryString();
     window.location.assign(
@@ -187,7 +198,7 @@
   function onEditableFilterChange(control) {
     if (
       control.getAttribute("data-filter") === "student_id"
-      && portalChildSwitcherPresent()
+      && (portalChildSwitcherPresent() || portalStudentFilterPresent())
     ) {
       navigateWithCurrentFilters();
       return;
