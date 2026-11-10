@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
-from sqlalchemy import select
+import re
 
-from app.models import GuardianRemarkRead, Remark, RemarkCategory, RemarkVisibility, Student
+import pytest
+from sqlalchemy import func, select
+
+from app.models import GuardianRemarkRead, Remark, RemarkCategory, RemarkVisibility, Student, User
 
 
 def _remark_term_id(db, student_id: int) -> int:
@@ -184,3 +186,42 @@ class TestParentRemarkNotices:
             json={"remark_ids": [draft.id]},
         )
         assert result.json()["marked"] == 0
+
+
+class TestParentRemarksChildFilterSync:
+    def test_view_remarks_student_query_matches_switcher(self, db):
+        from tests.conftest import CsrfTestClient, DEFAULT_HEADERS, _login
+        from app.main import app
+
+        row = db.execute(
+            select(Student.guardian_user_id, func.count())
+            .where(Student.guardian_user_id.is_not(None))
+            .group_by(Student.guardian_user_id)
+            .having(func.count() > 1)
+            .order_by(Student.guardian_user_id)
+            .limit(1)
+        ).first()
+        if row is None:
+            pytest.skip("seed has no guardian with multiple children")
+        guardian = db.get(User, row[0])
+        assert guardian is not None
+        child_ids = db.scalars(
+            select(Student.id)
+            .where(Student.guardian_user_id == guardian.id)
+            .order_by(Student.id)
+        ).all()
+        client = CsrfTestClient(app, base_url="http://testserver", headers=DEFAULT_HEADERS)
+        client = _login(guardian.email)
+        for sid in child_ids:
+            html = client.get(f"/parent/remarks?student_id={sid}").text
+            select_html = re.findall(
+                r'<select id="f-student"[\s\S]*?</select>', html
+            )
+            assert select_html, "student filter expected for multi-child parent"
+            opts = re.findall(r'<option value="(\d+)"\s+selected', select_html[0])
+            assert opts == [str(sid)]
+            current = re.findall(
+                r'href="/parent/remarks\?student_id=(\d+)"[^>]*aria-current="true"',
+                html,
+            )
+            assert current == [str(sid)]

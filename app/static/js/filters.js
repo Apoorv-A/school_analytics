@@ -173,6 +173,28 @@
     window.history.replaceState({}, "", url);
   }
 
+  function portalChildSwitcherPresent() {
+    return document.querySelector(".child-switch") !== null;
+  }
+
+  function navigateWithCurrentFilters() {
+    const query = queryString();
+    window.location.assign(
+      window.location.pathname + (query ? "?" + query : "")
+    );
+  }
+
+  function onEditableFilterChange(control) {
+    if (
+      control.getAttribute("data-filter") === "student_id"
+      && portalChildSwitcherPresent()
+    ) {
+      navigateWithCurrentFilters();
+      return;
+    }
+    announceChange();
+  }
+
   function announceChange() {
     syncUrl();
     renderSummary();
@@ -370,8 +392,10 @@
       announceChange();
     });
     editableControls().forEach(function (control) {
-      control.addEventListener("change", announceChange);
-      if (control.type !== "date") {
+      control.addEventListener("change", function () {
+        onEditableFilterChange(control);
+      });
+      if (control.type !== "date" && control.tagName !== "SELECT") {
         control.addEventListener("input", announceChange);
       }
     });

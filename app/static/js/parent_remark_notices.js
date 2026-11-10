@@ -6,13 +6,14 @@
 
   var dialog = document.getElementById("parent-remark-notices");
   var openBtn = document.querySelector("[data-remark-notices-open]");
-  if (!dialog || !openBtn || typeof dialog.showModal !== "function") return;
+  if (!dialog || !openBtn || typeof dialog.show !== "function") return;
 
   var badge = document.querySelector("[data-remark-notices-badge]");
   var sr = document.querySelector("[data-remark-notices-sr]");
   var listEl = dialog.querySelector("[data-remark-notices-list]");
   var emptyEl = dialog.querySelector("[data-remark-notices-empty]");
   var closeBtn = dialog.querySelector("[data-remark-notices-close]");
+  var scrimBtn = dialog.querySelector("[data-remark-notices-scrim]");
   var markAllBtn = dialog.querySelector("[data-remark-notices-mark-all]");
   var navRemarks = document.querySelector('.nav-link[href="/parent/remarks"]');
 
@@ -152,9 +153,13 @@
       });
   }
 
+  function closeDrawer() {
+    if (dialog.open) dialog.close();
+  }
+
   function openDrawer() {
     loadDrawer().finally(function () {
-      dialog.showModal();
+      dialog.show();
       if (closeBtn) closeBtn.focus();
     });
   }
@@ -162,16 +167,19 @@
   openBtn.addEventListener("click", openDrawer);
 
   if (closeBtn) {
-    closeBtn.addEventListener("click", function () {
-      if (dialog.open) dialog.close();
-    });
+    closeBtn.addEventListener("click", closeDrawer);
+  }
+  if (scrimBtn) {
+    scrimBtn.addEventListener("click", closeDrawer);
   }
   dialog.addEventListener("cancel", function (event) {
     event.preventDefault();
-    dialog.close();
+    closeDrawer();
   });
+
   dialog.addEventListener("click", function (event) {
-    if (event.target === dialog) dialog.close();
+    var link = event.target.closest("a[href^='/parent/remarks']");
+    if (link) closeDrawer();
   });
 
   if (markAllBtn) {
