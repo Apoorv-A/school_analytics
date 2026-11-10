@@ -683,16 +683,17 @@ def _remark_filter_conditions(
             conditions.append(in_year_terms)
         else:
             start, end = window
-            # `created_at` is a timestamp, so the upper bound is the day *after*
-            # the year ends. Comparing against `end_date` itself coerces it to
-            # midnight and drops everything written during that final day.
+            # `created_at` / `published_at` are timestamps, so the upper bound is the
+            # day *after* the year ends. Comparing against `end_date` itself coerces
+            # it to midnight and drops everything written during that final day.
+            placed_at = func.coalesce(Remark.published_at, Remark.created_at)
             conditions.append(
                 or_(
                     in_year_terms,
                     and_(
                         Remark.term_id.is_(None),
-                        Remark.created_at >= start,
-                        Remark.created_at < end + timedelta(days=1),
+                        placed_at >= start,
+                        placed_at < end + timedelta(days=1),
                     ),
                 )
             )

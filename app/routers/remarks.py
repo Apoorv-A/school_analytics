@@ -13,6 +13,7 @@ from app.db import get_db
 from app.deps import AccessScope, get_access_scope, require_roles
 from app.import_.conflicts import ANALYTICS_SOURCE_SYSTEM
 from app.models import Remark, RemarkCategory, RemarkVisibility, Role, Student, Term
+from app.remark_terms import infer_remark_term_id
 from app.tenant.features import require_remarks_enabled
 
 router = APIRouter(prefix="/api/remarks", tags=["remarks"])
@@ -52,6 +53,30 @@ def _mark_remark_published(
     remark.published_by_user_id = actor_user_id
 
 
+def _school_id_for_student(student: Student) -> int:
+    section = student.section
+    if section is None or section.grade is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Student is not linked to a classroom.",
+        )
+    return section.grade.school_id
+
+
+def _resolve_term_id(
+    db: Session,
+    tenant_id,
+    student: Student,
+    explicit_term_id: int | None,
+    when: datetime,
+) -> int | None:
+    if explicit_term_id is not None:
+        return explicit_term_id
+    return infer_remark_term_id(
+        db, tenant_id, _school_id_for_student(student), when
+    )
+
+
 @router.post("")
 def create_remark(
     payload: RemarkCreate,
@@ -85,11 +110,15 @@ def create_remark(
             detail="This account is not linked to a teacher record.",
         )
 
+    when = datetime.now(UTC)
+    term_id = _resolve_term_id(
+        db, scope.tenant_id, student, payload.term_id, when
+    )
     remark = Remark(
         tenant_id=scope.tenant_id,
         student_id=student.id,
         teacher_id=teacher.id,
-        term_id=payload.term_id,
+        term_id=term_id,
         subject_id=payload.subject_id,
         category=payload.category,
         body=payload.body,
@@ -99,7 +128,7 @@ def create_remark(
         ),
     )
     if payload.publish:
-        _mark_remark_published(remark, actor_user_id=scope.user.id)
+        _mark_remark_published(remark, actor_user_id=scope.user.id, at=when)
     db.add(remark)
     db.commit()
     db.refresh(remark)
@@ -155,7 +184,12 @@ def publish_remark(
             detail="Remark is already published.",
         )
 
-    _mark_remark_published(remark, actor_user_id=scope.user.id)
+    when = datetime.now(UTC)
+    if remark.term_id is None:
+        remark.term_id = _resolve_term_id(
+            db, scope.tenant_id, student, None, when
+        )
+    _mark_remark_published(remark, actor_user_id=scope.user.id, at=when)
     db.commit()
     db.refresh(remark)
     record_security_event(
