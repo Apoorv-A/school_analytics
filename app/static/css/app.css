@@ -1808,6 +1808,12 @@ tr.row--highlight td {
   display: none;
 }
 
+.remark-notices-drawer[open] {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+}
+
 .remark-notices-drawer__scrim {
   position: fixed;
   inset: 0;

@@ -177,6 +177,25 @@
     return document.querySelector(".child-switch") !== null;
   }
 
+  function parentRemarkDrawerOpen() {
+    const dialog = document.getElementById("parent-remark-notices");
+    return dialog !== null && dialog.open;
+  }
+
+  function closeOpenStudentComboboxes() {
+    if (!form) return;
+    form.querySelectorAll("[data-student-combobox]").forEach(function (box) {
+      box.classList.remove("is-open");
+      const results = box.querySelector("[data-student-results]");
+      const input = box.querySelector("#f-student-search");
+      if (results) results.hidden = true;
+      if (input) {
+        input.setAttribute("aria-expanded", "false");
+        if (document.activeElement === input) input.blur();
+      }
+    });
+  }
+
   function portalStudentFilterPresent() {
     return (
       (window.location.pathname === "/parent"
@@ -371,9 +390,11 @@
     if (!results.id) results.id = "f-student-results";
 
     input.addEventListener("focus", function () {
+      if (parentRemarkDrawerOpen()) return;
       showResults(input.value.trim());
     });
     input.addEventListener("click", function () {
+      if (parentRemarkDrawerOpen()) return;
       showResults(input.value.trim());
     });
     input.addEventListener("input", function () {
@@ -425,5 +446,7 @@
   window.SchoolFilters = {
     queryString: queryString,
     reset: reset,
+    closeOpenStudentComboboxes: closeOpenStudentComboboxes,
+    parentRemarkDrawerOpen: parentRemarkDrawerOpen,
   };
 })();

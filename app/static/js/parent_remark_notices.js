@@ -109,10 +109,23 @@
     });
   }
 
+  function remarksTimelineOnPage() {
+    return document.querySelector('[data-chart="student.remarks"]') !== null;
+  }
+
   function refreshRemarksTimeline() {
-    if (!window.location.pathname.startsWith("/parent/remarks")) return;
+    if (!remarksTimelineOnPage()) return;
     if (window.SchoolCharts && typeof window.SchoolCharts.refreshAll === "function") {
       window.SchoolCharts.refreshAll();
+    }
+  }
+
+  function dismissFilterChrome() {
+    if (
+      window.SchoolFilters
+      && typeof window.SchoolFilters.closeOpenStudentComboboxes === "function"
+    ) {
+      window.SchoolFilters.closeOpenStudentComboboxes();
     }
   }
 
@@ -127,9 +140,10 @@
       })
       .then(function (data) {
         if (data && typeof data.count === "number") {
-          var hadBadge = badge && !badge.hidden;
+          var previous =
+            badge && !badge.hidden ? Number(badge.textContent) || 0 : 0;
           setCount(data.count);
-          if (data.count > 0 && !hadBadge) refreshRemarksTimeline();
+          if (data.count > previous) refreshRemarksTimeline();
         }
       })
       .catch(function () { /* non-blocking */ });
@@ -173,17 +187,24 @@
   }
 
   function openDrawer() {
+    dismissFilterChrome();
     loadDrawer()
       .then(function () {
         refreshRemarksTimeline();
       })
       .finally(function () {
         dialog.show();
-        if (closeBtn) closeBtn.focus();
+        if (closeBtn && typeof closeBtn.focus === "function") {
+          closeBtn.focus({ preventScroll: true });
+        }
       });
   }
 
-  openBtn.addEventListener("click", openDrawer);
+  openBtn.addEventListener("click", function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+    openDrawer();
+  });
 
   if (closeBtn) {
     closeBtn.addEventListener("click", closeDrawer);

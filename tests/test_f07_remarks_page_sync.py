@@ -99,6 +99,9 @@ class TestParentRemarkDrawerUx:
         source = js_path.read_text(encoding="utf-8")
         assert "refreshRemarksTimeline" in source
         assert "SchoolCharts.refreshAll" in source
+        assert 'data-chart="student.remarks"' in source
+        assert "dismissFilterChrome" in source
+        assert "stopPropagation" in source
 
     def test_drawer_shell_uses_scrim_not_modal_backdrop(self, parent_context):
         html = parent_context["client"].get("/parent").text
@@ -124,6 +127,18 @@ class TestParentStudentFilterReload:
         assert "portalStudentFilterPresent" in source
         assert "navigateWithCurrentFilters" in source
         assert 'data-filter") === "student_id"' in source
+
+    def test_filters_js_closes_combobox_when_remark_drawer_open(self):
+        js_path = Path(__file__).resolve().parents[1] / "app/static/js/filters.js"
+        source = js_path.read_text(encoding="utf-8")
+        assert "parentRemarkDrawerOpen" in source
+        assert "closeOpenStudentComboboxes" in source
+
+    def test_remark_drawer_stacks_above_filters(self):
+        css_path = Path(__file__).resolve().parents[1] / "app/static/css/app.css"
+        source = css_path.read_text(encoding="utf-8")
+        assert ".remark-notices-drawer[open]" in source
+        assert "z-index: 100" in source
 
 
 class TestParentRemarksTimelineSync:
