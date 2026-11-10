@@ -192,6 +192,28 @@ def _render(
     )
 
 
+@router.get("/lookup")
+def student_lookup(
+    request: Request,
+    db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
+    filters: FilterParams = Depends(filter_params),
+) -> Response:
+    """Search assigned students and open a scoped performance record."""
+    return render_dashboard(
+        request,
+        db,
+        scope,
+        filters,
+        title="Student lookup",
+        subtitle="Search for a student you teach to open their record",
+        active_nav="/teacher/lookup",
+        visible_filters=["academic_year", "student", "term", "subject", "assessment_type"],
+        cards=staff_student_overview_cards(admin=False),
+        require_student=True,
+    )
+
+
 @router.get("")
 def overview(
     request: Request,

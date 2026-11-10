@@ -80,7 +80,10 @@ PAGES: dict[str, dict] = {
             {
                 "key": "school.term_trend",
                 "title": "Term trend by grade",
-                "subtitle": "Ignores the term filter so the trajectory stays visible.",
+                "subtitle": (
+                    "Explore how average assessment performance changes across "
+                    "academic terms for each grade."
+                ),
                 "span": 8,
                 "holder": "chart-holder chart-holder--tall",
             },
@@ -113,6 +116,10 @@ PAGES: dict[str, dict] = {
             {
                 "key": "school.term_trend",
                 "title": "Term trend by grade",
+                "subtitle": (
+                    "Explore how average assessment performance changes across "
+                    "academic terms for each grade."
+                ),
                 "span": 12,
                 "holder": "chart-holder chart-holder--tall",
             },

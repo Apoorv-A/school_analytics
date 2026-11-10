@@ -138,9 +138,28 @@
   function buildLine(holder, payload) {
     const canvas = el("canvas");
     holder.appendChild(canvas);
+    const highlightIndex =
+      payload.meta && typeof payload.meta.highlightedTermIndex === "number"
+        ? payload.meta.highlightedTermIndex
+        : null;
+    const labels = payload.labels || [];
     const datasets = payload.series.map(function (series, index) {
       const color = PALETTE[index % PALETTE.length];
       const dashed = series.kind === "dashed";
+      const pointRadius =
+        highlightIndex === null || dashed
+          ? dashed
+            ? 0
+            : 3
+          : labels.map(function (_label, pointIndex) {
+              return pointIndex === highlightIndex ? 7 : 3;
+            });
+      const pointBackgroundColor =
+        highlightIndex === null || dashed
+          ? undefined
+          : labels.map(function (_label, pointIndex) {
+              return pointIndex === highlightIndex ? "#0f172a" : color;
+            });
       return {
         label: series.label,
         data: series.data,
@@ -148,7 +167,9 @@
         backgroundColor: color + "22",
         borderWidth: dashed ? 1.5 : 2.4,
         borderDash: dashed ? [5, 4] : undefined,
-        pointRadius: dashed ? 0 : 3,
+        pointRadius: pointRadius,
+        pointBackgroundColor: pointBackgroundColor,
+        pointBorderColor: pointBackgroundColor,
         pointHoverRadius: 5,
         tension: 0.35,
         spanGaps: true,
@@ -964,8 +985,15 @@
       const chart = builder(holder, payload);
       registry.set(card, { payload: payload, chart: chart });
 
-      if (subtitle && payload.meta && payload.meta.hint) {
-        subtitle.textContent = payload.meta.hint;
+      if (subtitle) {
+        const base =
+          subtitle.getAttribute("data-default-subtitle") || subtitle.textContent || "";
+        const note =
+          payload.meta &&
+          (payload.meta.filterNote || payload.meta.hint);
+        subtitle.textContent = note
+          ? base + (base ? " — " : "") + note
+          : base;
       }
     } catch (error) {
       showState(holder, "Network error while loading this view.", true);

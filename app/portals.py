@@ -28,6 +28,17 @@ PORTAL_HOME: dict[Role, str] = {
     Role.STUDENT: "/student",
 }
 
+_METRICS_GUIDE = {
+    "href": "/help/metrics",
+    "label": "Metrics guide",
+    "icon": "\u2139",
+}
+
+_NAV_HELP_GROUP = {
+    "title": "Help",
+    "items": [_METRICS_GUIDE],
+}
+
 NAV: dict[Role, list[dict]] = {
     Role.PARENT: [
         {
@@ -40,7 +51,8 @@ NAV: dict[Role, list[dict]] = {
                 {"href": "/parent/attendance", "label": "Attendance", "icon": "\u2713"},
                 {"href": "/parent/remarks", "label": "Teacher remarks", "icon": "\u201c"},
             ],
-        }
+        },
+        _NAV_HELP_GROUP,
     ],
     Role.STUDENT: [
         {
@@ -53,7 +65,8 @@ NAV: dict[Role, list[dict]] = {
                 {"href": "/student/attendance", "label": "Attendance", "icon": "\u2713"},
                 {"href": "/student/remarks", "label": "Remarks", "icon": "\u201c"},
             ],
-        }
+        },
+        _NAV_HELP_GROUP,
     ],
     Role.TEACHER: [
         {
@@ -63,11 +76,13 @@ NAV: dict[Role, list[dict]] = {
                 {"href": "/teacher/assessments", "label": "Assessments", "icon": "\u2261"},
                 {"href": "/teacher/subjects", "label": "Subjects", "icon": "\u25c6"},
                 {"href": "/teacher/students", "label": "Students", "icon": "\u25cf"},
+                {"href": "/teacher/lookup", "label": "Student lookup", "icon": "\u2315"},
                 {"href": "/teacher/attention", "label": "Needs attention", "icon": "\u26a0"},
                 {"href": "/teacher/interventions", "label": "Interventions", "icon": "\u2691"},
                 {"href": "/teacher/attendance", "label": "Attendance", "icon": "\u2713"},
             ],
-        }
+        },
+        _NAV_HELP_GROUP,
     ],
     Role.ADMIN: [
         {
@@ -89,6 +104,7 @@ NAV: dict[Role, list[dict]] = {
                 {"href": "/admin/import", "label": "Data import", "icon": "\u2191"},
             ],
         },
+        _NAV_HELP_GROUP,
     ],
 }
 

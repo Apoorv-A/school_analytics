@@ -437,7 +437,7 @@ class TestFiltersApplyEverywhere:
 
         def results(payload):
             card = next(c for c in payload["cards"] if c["label"] == "Pass rate")
-            return int(card["hint"].split()[0])
+            return int(card["hint"].split()[0].replace(",", ""))
 
         assert results(one_term) < results(full_year)
 

@@ -2,7 +2,7 @@
 
 Use this document to onboard another AI agent, reviewer, or engineer. It is the single canonical context file for the **Python multi-tenant** implementation.
 
-**Authoritative audit handoff (P0 gates, invariants, backlog):** The September 2026 engineering audit handoff (`school_platform_ai_handoff.md`) is the release-sequencing source of truth. Do not begin post-P0 feature work until P0 exit criteria in that document are satisfied. This file documents the current codebase; when they conflict on sequencing or security invariants, follow the audit handoff.
+**Authoritative audit handoff (P0 gates, invariants, backlog):** The September 2026 engineering audit handoff (`school_platform_ai_handoff.md`) is the release-sequencing source of truth. That file is **not vendored in this repository**; it may live in an external audit bundle. Do not begin post-P0 feature work until P0 exit criteria there are satisfied. This file documents the current codebase; when they conflict on sequencing or security invariants, follow the audit handoff. The §12.1 table below is the in-repo checklist.
 
 **Path:** `docs/AI_HANDOFF.md` in the [school_analytics](https://github.com/Apoorv-A/school_analytics) code repository.
 
@@ -143,6 +143,10 @@ PYTHONPATH=. python scripts/docs_generate.py
 PYTHONPATH=. python scripts/docs_verify.py
 ```
 
+### Local Kubernetes (kind)
+
+Optional cluster parity before cloud deploy: [kind-helm-local.md](operations/kind-helm-local.md). GitHub **deploy** / **qa-regression** for staging and production require `KUBECONFIG` on the matching GitHub environment — see [stg-regression-signoff.md](operations/stg-regression-signoff.md) and [prod-deploy-runbook.md](operations/prod-deploy-runbook.md). Ephemeral ops gates are summarized in `TASK_HANDOFF.md` at the repo root (not duplicated here).
+
 ---
 
 ## Config repo workflow
@@ -195,7 +199,7 @@ New users from `users.csv` get unique temporary passwords returned in the apply 
 
 ## Tests
 
-~320 tests including tenant isolation, authz, charts, insights, import validation, interventions, policy, and QA contract tests (`tests/test_qa_contract.py`).
+~640 tests including tenant isolation, authz, charts, insights, import validation, ERP webhook/connectors/conflicts, interventions, policy, and QA contract tests (`tests/test_qa_contract.py`). Confirm with `PYTHONPATH=. pytest -q --collect-only`.
 
 Always pass `Host: sunrise.localhost` (or `horizon.localhost`) in API tests — see `tests/conftest.py` `DEFAULT_HEADERS`.
 
@@ -239,7 +243,7 @@ PYTHONPATH=. pytest -q
 PYTHONPATH=. python scripts/docs_verify.py
 ```
 
-**Last updated:** 2026-09-15 (P0 supply chain + production support matrix + Helm read-only root FS).
+**Last updated:** 2026-11-09 (v1.3.0 ERP connector slice; handoff reconciliation — Alembic head, test count, Phase 2 / ops pointers).
 
 ---
 
@@ -296,7 +300,7 @@ Tracked against the authoritative `school_platform_ai_handoff.md`; do not treat 
 | Session/device list UI | **Not started** |
 | SSO / verified contact workflows | **Not started** |
 
-Alembic head: `009_security_audit_events` (account lifecycle in `008`).
+**Alembic head (current):** `016_import_conflicts`. **Historical note:** security audit and account lifecycle landed in `008` / `009_security_audit_events` (see P0 auditability below); later Phase 2 revisions include `015_import_sync_state` (delta sync) and `016_import_conflicts`.
 
 ### P0 auditability (handoff §24.4)
 
@@ -334,11 +338,26 @@ Both paths bypass tenant hostname resolution (`TenantMiddleware` exempt list).
 
 ---
 
-## Phase 2 (in progress)
+## Metric glossary (F01)
 
-Scope and roadmap: [docs/product/phase2.md](product/phase2.md) and [docs/product/erp-strategy.md](product/erp-strategy.md).
+Canonical catalogue: `app/analytics/metric_registry.py` (generated `docs/generated/metrics_registry.{json,yaml}`). Role-aware API:
 
-**Shipped so far:**
+| Path | Purpose |
+| --- | --- |
+| `GET /api/metrics` | List metrics visible to the signed-in role; optional `?q=` search |
+| `GET /api/metrics/{metric_id}` | One entry; **404** if out of audience or `family_safe=False` for parent/student |
+| `GET /help/metrics` | HTML appendix (authenticated); linked from all portal sidebars (F01-04) |
+| `GET /api/charts/{key}/info` | Chart-level metric definitions for the **About this chart** panel (F01-04) |
+
+Staff-only fields (`implementation` pointers) are omitted for parent/student. Formula regression: `tests/test_metric_formulas.py`; API: `tests/test_metrics_glossary.py`.
+
+---
+
+## Phase 2
+
+Scope and roadmap: [docs/product/phase2.md](product/phase2.md) and [docs/product/erp-strategy.md](product/erp-strategy.md). **Release:** [v1.3.0](releases/v1.3.0.md) (2026-11-09) — ERP ingest, connector sync, delta sync, import conflicts.
+
+**Shipped (through v1.3.0):**
 
 - `import_runs` audit table (Alembic `004_import_runs`) — records validate/apply from CLI, `/admin/import`, `/api/import/*`, and `/api/erp/import`.
 - Admin **Data import** page lists recent runs (status, source, files, error count).
@@ -349,9 +368,13 @@ Scope and roadmap: [docs/product/phase2.md](product/phase2.md) and [docs/product
 - **Intervention workflow** — `intervention_cases` / `intervention_contacts` tables, admin UI at `/admin/interventions`, API at `/api/interventions` when `features.interventions` is enabled.
 - **Policy layer** — `app/tenant/policy.py` applies `portal.familyComparisonMode` and attendance counting rules from tenant settings.
 
-- **Delta sync** — bundle SHA-256 fingerprint per tenant `sync:*` channel (`import_sync_state`, Alembic `015`); skipped runs use `import_runs.status=skipped`; CLI `--force`. See `docs/operations/erp-delta-sync.md`.
+- **Delta sync** — bundle SHA-256 fingerprint per tenant `sync:*` channel (`import_sync_state`, Alembic `015`); skipped runs use `import_runs.status=skipped`; CLI `--force`. See [erp-delta-sync.md](operations/erp-delta-sync.md).
+- **Import conflicts** — `import_conflicts` (Alembic `016`), `GET/POST /api/import/conflicts`, admin **Data import** UI (keep local / accept ERP / per-field). Smoke: [erp-import-conflicts-smoke.md](operations/erp-import-conflicts-smoke.md).
+- **Connector sync** — scheduled pull via `python -m app.import_.connectors.cli sync` (`local` drop dir, `sftp`, `rest` polling). Runbook: [erp-connector-sync.md](operations/erp-connector-sync.md); webhook smoke: [erp-webhook-smoke.md](operations/erp-webhook-smoke.md).
 
-**Import conflicts:** `import_conflicts` table, `/api/import/conflicts`, admin import UI (keep local / accept ERP / per-field). **Scheduled sync:** `docs/operations/erp-connector-sync.md` (`local`, `sftp`, and `rest` kinds).
+**Ops (deploy, not product scope):** local cluster — [kind-helm-local.md](operations/kind-helm-local.md); staging sign-off — [stg-regression-signoff.md](operations/stg-regression-signoff.md); production — [prod-deploy-runbook.md](operations/prod-deploy-runbook.md).
+
+**Deferred (product):** Full bidirectional ERP sync and expanded conflict preview UX remain out of scope for the v1.3.0 slice per `TASK_HANDOFF.md` §6 and [phase2.md](product/phase2.md). Shipped work is ingest paths (CLI, admin, webhook, connectors), delta sync, and conflicts UI/API.
 
 ---
 

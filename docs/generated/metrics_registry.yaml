@@ -1,0 +1,1096 @@
+version: 1.0.0
+metric_count: 27
+chart_count: 38
+metrics:
+- id: attendance.monthly_mix
+  label: Attendance by month
+  kind: derived
+  audience:
+  - admin
+  - parent
+  - student
+  - teacher
+  chart_keys:
+  - student.attendance
+  summary: Stacked present/late/excused/absent day counts per calendar month.
+  numerator_denominator: counts by status per month
+  inclusion: Student's attendance rows
+  exclusion: —
+  filter_semantics: Student scoped
+  reporting_period: Months overlapping filter dates
+  data_source: '``attendance``'
+  implementation:
+  - app.analytics.queries:attendance_monthly
+  version: 1.0.0
+  family_safe: true
+  privacy_note: null
+  kpi_card_labels: []
+  known_limitations: null
+- id: attendance.student_rate
+  label: Attendance rate
+  kind: kpi
+  audience:
+  - admin
+  - parent
+  - student
+  - teacher
+  chart_keys:
+  - student.kpis
+  - section.kpis
+  - school.kpis
+  - student.attendance
+  - section.attendance
+  - school.attendance_scatter
+  summary: 'Official daily attendance: present days (per tenant policy for late/excused)
+    divided by recorded days, then averaged across students for cohort KPIs.'
+  numerator_denominator: present_days / total_days per student; cohort uses mean
+  inclusion: Attendance rows in term/year/date filters
+  exclusion: Days outside filter; session-level attendance not used here
+  filter_semantics: '``attendance_present_days`` respects ``attendance_count_late_as_present``
+    and ``attendance_count_excused_as_present`` tenant flags.'
+  reporting_period: Filtered term or academic year
+  data_source: '``attendance`` (daily official)'
+  implementation:
+  - app.analytics.queries:attendance_by_student
+  - app.analytics.metrics:attendance_percentage
+  - app.tenant.policy:attendance_present_days
+  version: 1.0.0
+  family_safe: true
+  privacy_note: Daily official attendance, not per-period session roll call.
+  kpi_card_labels:
+  - Attendance
+  known_limitations: null
+- id: enrollment.class_students_count
+  label: Students (class)
+  kind: kpi
+  audience:
+  - admin
+  - teacher
+  chart_keys:
+  - section.kpis
+  summary: Distinct students with results in the classroom scope.
+  numerator_denominator: count(distinct student_id)
+  inclusion: In-scope scores
+  exclusion: —
+  filter_semantics: Section pinned by classroom charts
+  reporting_period: Filter window
+  data_source: '``cohort_overview``'
+  implementation:
+  - app.analytics.queries:cohort_overview
+  version: 1.0.0
+  family_safe: false
+  privacy_note: null
+  kpi_card_labels:
+  - Students
+  known_limitations: null
+- id: grade.letter_band
+  label: Letter grade
+  kind: classification
+  audience:
+  - admin
+  - parent
+  - student
+  - teacher
+  chart_keys:
+  - student.kpis
+  - student.subject_table
+  - student.assessment_table
+  - section.grade_mix
+  - student.grade_mix
+  summary: CBSE-style band from ``GRADE_BANDS`` on a percentage.
+  numerator_denominator: threshold lookup on pct
+  inclusion: Any numeric percentage
+  exclusion: None/absent → ``--``
+  filter_semantics: Static bands
+  reporting_period: N/A
+  data_source: Derived from scores
+  implementation:
+  - app.analytics.metrics:letter_grade
+  - app.analytics.metrics:GRADE_BANDS
+  version: 1.0.0
+  family_safe: true
+  privacy_note: null
+  kpi_card_labels: []
+  known_limitations: null
+- id: grade.mix_doughnut
+  label: Grade mix
+  kind: derived
+  audience:
+  - admin
+  - parent
+  - student
+  - teacher
+  chart_keys:
+  - student.grade_mix
+  - section.grade_mix
+  - school.pass_rate
+  summary: Count of results (or subjects) per letter grade band.
+  numerator_denominator: count per letter grade
+  inclusion: Non-null percentages
+  exclusion: Zero-count bands omitted from doughnut
+  filter_semantics: Per chart data source
+  reporting_period: Filter window
+  data_source: Subject averages or raw results
+  implementation:
+  - app.analytics.metrics:grade_counts
+  version: 1.0.0
+  family_safe: true
+  privacy_note: null
+  kpi_card_labels: []
+  known_limitations: null
+- id: grade.result_distribution
+  label: Score distribution
+  kind: derived
+  audience:
+  - admin
+  - teacher
+  chart_keys:
+  - school.distribution
+  - section.distribution
+  summary: Histogram bucket counts over ``DISTRIBUTION_BUCKETS``.
+  numerator_denominator: count per band
+  inclusion: Result percentages
+  exclusion: Absent
+  filter_semantics: Scope filters
+  reporting_period: Filter window
+  data_source: '``score_values``'
+  implementation:
+  - app.analytics.metrics:distribution
+  version: 1.0.0
+  family_safe: false
+  privacy_note: null
+  kpi_card_labels: []
+  known_limitations: null
+- id: perf.assessment_pass_rate
+  label: Assessment pass rate
+  kind: kpi
+  audience:
+  - admin
+  - parent
+  - student
+  - teacher
+  chart_keys:
+  - school.kpis
+  - section.kpis
+  - school.pass_rate
+  - school.grade_averages
+  - school.subject_averages
+  - section.subject_averages
+  - school.section_leaderboard
+  - school.teacher_effectiveness
+  summary: Share of assessment results at or above the tenant pass percentage.
+  numerator_denominator: count(pct ≥ pass_threshold) / count(results)
+  inclusion: Graded percentages in scope
+  exclusion: Absent results
+  filter_semantics: Tenant ``pass_percentage`` from ``TenantSettings``.
+  reporting_period: Filter window
+  data_source: '``scores``'
+  implementation:
+  - app.analytics.metrics:pass_rate
+  - app.analytics.queries:score_values
+  version: 1.0.0
+  family_safe: true
+  privacy_note: Rate is over results, not unique students passing a year.
+  kpi_card_labels:
+  - Pass rate
+  known_limitations: null
+- id: perf.assessment_results_count
+  label: Assessment results
+  kind: aggregate
+  audience:
+  - admin
+  - teacher
+  chart_keys:
+  - school.kpis
+  - section.kpis
+  - school.distribution
+  - section.distribution
+  summary: Count of individual graded result rows in scope.
+  numerator_denominator: count(score.id)
+  inclusion: All graded rows
+  exclusion: Ungraded/absent rows excluded from percentage lists
+  filter_semantics: Standard analytics filters
+  reporting_period: Filter window
+  data_source: '``scores``'
+  implementation:
+  - app.analytics.queries:cohort_overview
+  - app.analytics.queries:score_values
+  version: 1.0.0
+  family_safe: false
+  privacy_note: null
+  kpi_card_labels: []
+  known_limitations: null
+- id: perf.assessments_held
+  label: Assessments held
+  kind: kpi
+  audience:
+  - admin
+  chart_keys:
+  - school.kpis
+  summary: Distinct assessments conducted in the filtered scope.
+  numerator_denominator: count(distinct assessment.id)
+  inclusion: Assessments with at least one linked score in scope
+  exclusion: —
+  filter_semantics: Standard filters
+  reporting_period: Filter window
+  data_source: '``assessments`` / ``scores``'
+  implementation:
+  - app.analytics.queries:cohort_overview
+  version: 1.0.0
+  family_safe: false
+  privacy_note: null
+  kpi_card_labels:
+  - Assessments held
+  known_limitations: null
+- id: perf.attendance_vs_performance
+  label: Attendance versus performance
+  kind: derived
+  audience:
+  - admin
+  chart_keys:
+  - school.attendance_scatter
+  summary: Scatter of each student's attendance % vs overall average %.
+  numerator_denominator: paired (attendance, average)
+  inclusion: Students in standings
+  exclusion: Missing either axis omitted
+  filter_semantics: School scope
+  reporting_period: Filter window
+  data_source: '``attendance_vs_performance``'
+  implementation:
+  - app.analytics.queries:attendance_vs_performance
+  version: 1.0.0
+  family_safe: false
+  privacy_note: null
+  kpi_card_labels: []
+  known_limitations: null
+- id: perf.class_rank
+  label: Class rank
+  kind: kpi
+  audience:
+  - admin
+  - parent
+  - student
+  - teacher
+  chart_keys:
+  - student.kpis
+  - student.term_progress
+  summary: Rank by latest term average among classmates; ties share rank.
+  numerator_denominator: rank in cohort by score
+  inclusion: Students in the same section with term averages
+  exclusion: Hidden from family when cohort benchmarks disabled
+  filter_semantics: Uses latest term with rank in ``student_term_progress``
+  reporting_period: Latest term in filter
+  data_source: Term progress query
+  implementation:
+  - app.analytics.queries:student_term_progress
+  - app.analytics.metrics:rank_and_percentile
+  version: 1.0.0
+  family_safe: true
+  privacy_note: Suppressed in family mode when cohort comparison is off.
+  kpi_card_labels:
+  - Class rank
+  known_limitations: null
+- id: perf.cohort_weighted_average
+  label: School / class weighted average
+  kind: kpi
+  audience:
+  - admin
+  - parent
+  - student
+  - teacher
+  chart_keys:
+  - school.kpis
+  - section.kpis
+  - school.grade_averages
+  - school.subject_averages
+  - school.section_compare
+  - school.section_leaderboard
+  - section.subject_averages
+  summary: Mean assessment percentage weighted by each assessment's weightage across
+    every graded result in the active filter scope.
+  numerator_denominator: sum(pct * weightage) / sum(weightage) per SQL aggregate
+  inclusion: Graded Score rows matching filters and access scope
+  exclusion: Absent marks (no percentage); rows outside tenant or scope
+  filter_semantics: Honours academic year, term, grade, section, subject, and date
+    filters via ``FilterParams`` and ``AccessScope`` on ``_base_select``.
+  reporting_period: Selected term or academic year when filtered; otherwise in-scope
+    history
+  data_source: '``scores`` joined to ``assessments`` (ERP import or school entry)'
+  implementation:
+  - app.analytics.queries:WEIGHTED_AVG_EXPR
+  - app.analytics.queries:cohort_overview
+  - app.analytics.metrics:weighted_average
+  version: 1.0.0
+  family_safe: true
+  privacy_note: null
+  kpi_card_labels:
+  - School average
+  - Class average
+  known_limitations: Student-level overall average on ``student.kpis`` uses an unweighted
+    mean of subject averages, not this SQL weighting.
+- id: perf.gap_to_class
+  label: Versus class average
+  kind: kpi
+  audience:
+  - admin
+  - parent
+  - student
+  - teacher
+  chart_keys:
+  - student.kpis
+  - student.subject_table
+  summary: Student overall average minus class mean of subject averages (points).
+  numerator_denominator: student_overall - class_overall
+  inclusion: Both averages computed on the same filter set
+  exclusion: Either average missing → no gap
+  filter_semantics: Student and class summaries share filters
+  reporting_period: Latest in-scope terms
+  data_source: '``student_overview``'
+  implementation:
+  - app.analytics.queries:student_overview
+  - app.analytics.metrics:delta
+  version: 1.0.0
+  family_safe: true
+  privacy_note: null
+  kpi_card_labels:
+  - Versus class average
+  known_limitations: null
+- id: perf.matrix_cell_average
+  label: Heatmap cell average
+  kind: derived
+  audience:
+  - admin
+  - teacher
+  chart_keys:
+  - section.heatmap
+  - school.section_matrix
+  summary: Weighted average for each row/column pair in a matrix.
+  numerator_denominator: WEIGHTED_AVG_EXPR per group
+  inclusion: Cells with data
+  exclusion: Empty cells null
+  filter_semantics: Matrix dimensions (student/subject, section/subject, grade/term)
+  reporting_period: Filter window
+  data_source: '``matrix_averages``'
+  implementation:
+  - app.analytics.queries:matrix_averages
+  version: 1.0.0
+  family_safe: false
+  privacy_note: null
+  kpi_card_labels: []
+  known_limitations: null
+- id: perf.median_assessment_pct
+  label: Median assessment percentage
+  kind: derived
+  audience:
+  - admin
+  - teacher
+  chart_keys:
+  - school.kpis
+  - section.kpis
+  summary: Median of individual assessment result percentages in scope.
+  numerator_denominator: median(score_values)
+  inclusion: Each non-absent result percentage once
+  exclusion: Absent attempts
+  filter_semantics: Same as ``score_values``.
+  reporting_period: Current filter window
+  data_source: '``scores`` / ``assessments``'
+  implementation:
+  - app.analytics.queries:cohort_overview
+  - app.analytics.queries:score_values
+  version: 1.0.0
+  family_safe: false
+  privacy_note: null
+  kpi_card_labels: []
+  known_limitations: Even-count cohorts use the upper middle index (``sorted[n//2]``),
+    not the statistical median of two middles — F01-02 should regression-test.
+- id: perf.score_spread
+  label: Spread (consistency of results)
+  kind: kpi
+  audience:
+  - admin
+  - teacher
+  chart_keys:
+  - section.kpis
+  summary: Standard deviation of in-scope assessment percentages (lower = tighter).
+  numerator_denominator: stdev(score_values)
+  inclusion: All result percentages
+  exclusion: —
+  filter_semantics: Classroom scope
+  reporting_period: Filter window
+  data_source: '``score_values``'
+  implementation:
+  - app.analytics.metrics:consistency
+  - app.analytics.queries:cohort_overview
+  version: 1.0.0
+  family_safe: false
+  privacy_note: null
+  kpi_card_labels:
+  - Spread
+  known_limitations: null
+- id: perf.student_overall_average
+  label: Student overall average
+  kind: kpi
+  audience:
+  - admin
+  - parent
+  - student
+  - teacher
+  chart_keys:
+  - student.kpis
+  - student.subject_table
+  summary: Arithmetic mean of the student's per-subject averages in filter scope.
+  numerator_denominator: mean(subject_averages)
+  inclusion: Subjects with at least one graded result for the student
+  exclusion: Subjects with no assessments in scope
+  filter_semantics: Same subject/term/year filters as ``student_subject_summaries``.
+  reporting_period: Filtered term/year or all in-scope terms
+  data_source: Per-subject weighted averages from ``student_subject_summaries``
+  implementation:
+  - app.analytics.queries:student_overview
+  - app.analytics.metrics:safe_mean
+  version: 1.0.0
+  family_safe: true
+  privacy_note: null
+  kpi_card_labels:
+  - Overall average
+  known_limitations: null
+- id: perf.students_assessed
+  label: Students assessed
+  kind: kpi
+  audience:
+  - admin
+  chart_keys:
+  - school.kpis
+  summary: Count of distinct students with at least one graded result in scope.
+  numerator_denominator: count(distinct student_id)
+  inclusion: Students with any in-scope score
+  exclusion: Students with only absences
+  filter_semantics: Cohort filters on ``_base_select``.
+  reporting_period: Filter window
+  data_source: '``scores``'
+  implementation:
+  - app.analytics.queries:cohort_overview
+  version: 1.0.0
+  family_safe: false
+  privacy_note: null
+  kpi_card_labels:
+  - Students assessed
+  known_limitations: null
+- id: perf.subject_strength_radar
+  label: Subject strength profile
+  kind: derived
+  audience:
+  - admin
+  - parent
+  - student
+  - teacher
+  chart_keys:
+  - student.subject_radar
+  summary: Radar of student vs class average per subject code.
+  numerator_denominator: paired subject averages
+  inclusion: Subjects assessed
+  exclusion: Family mode may strip class series
+  filter_semantics: '``sanitize_family_chart``'
+  reporting_period: Filter window
+  data_source: '``student_subject_summaries``'
+  implementation:
+  - app.analytics.charts:student_subject_radar
+  version: 1.0.0
+  family_safe: true
+  privacy_note: null
+  kpi_card_labels: []
+  known_limitations: null
+- id: perf.term_trajectory_slope
+  label: Direction of travel / term trend
+  kind: kpi
+  audience:
+  - admin
+  - parent
+  - student
+  - teacher
+  chart_keys:
+  - student.kpis
+  - student.term_progress
+  - school.term_trend
+  summary: Least-squares slope of term-average series in percentage points per term
+    (student) or grade-by-term matrix (school trend chart).
+  numerator_denominator: OLS slope on term averages
+  inclusion: Terms with averages
+  exclusion: Single-term series → insufficient data
+  filter_semantics: '``school.term_trend`` keeps all terms on the chart for comparison.
+    A selected term is highlighted, not used to hide other terms. Grade, subject,
+    section, and assessment-type filters still apply.'
+  reporting_period: Academic year (school trend); student terms in filter
+  data_source: Term aggregates
+  implementation:
+  - app.analytics.metrics:trend_slope
+  - app.analytics.metrics:term_trend_label
+  - app.analytics.charts:school_term_trend
+  version: 1.0.0
+  family_safe: true
+  privacy_note: null
+  kpi_card_labels:
+  - Direction of travel
+  known_limitations: null
+- id: risk.composite_status
+  label: Student risk status
+  kind: classification
+  audience:
+  - admin
+  - parent
+  - student
+  - teacher
+  chart_keys:
+  - student.kpis
+  - section.students_table
+  - section.at_risk
+  - school.at_risk
+  summary: Rule-based flag from average, failing subjects, term slide, attendance,
+    recent drop, and concern remarks — descriptive, not diagnostic.
+  numerator_denominator: weighted score → none | watch | high
+  inclusion: Students with enough signals in scope
+  exclusion: —
+  filter_semantics: Tenant at-risk and pass thresholds
+  reporting_period: Current filters; remarks lookback labeled on card
+  data_source: Grades, attendance, remarks
+  implementation:
+  - app.analytics.metrics:assess_risk
+  - app.analytics.queries:student_standings
+  version: 1.0.0
+  family_safe: true
+  privacy_note: Never presented as medical or disciplinary verdict.
+  kpi_card_labels:
+  - Status
+  known_limitations: null
+- id: risk.high_risk_students
+  label: High-risk students
+  kind: derived
+  audience:
+  - admin
+  - teacher
+  chart_keys:
+  - school.kpis
+  - section.kpis
+  - school.at_risk
+  summary: Subset of at-risk cohort at ``high`` level.
+  numerator_denominator: count(level == high)
+  inclusion: High risk only
+  exclusion: Watch-level only
+  filter_semantics: Same as standings
+  reporting_period: Filter window
+  data_source: '``student_standings``'
+  implementation:
+  - app.analytics.queries:cohort_overview
+  version: 1.0.0
+  family_safe: false
+  privacy_note: null
+  kpi_card_labels: []
+  known_limitations: null
+- id: risk.students_needing_support
+  label: Students needing support
+  kind: kpi
+  audience:
+  - admin
+  - teacher
+  chart_keys:
+  - school.kpis
+  - section.kpis
+  - section.at_risk
+  - school.at_risk
+  summary: Count of students with ``risk.is_at_risk`` in ``student_standings``.
+  numerator_denominator: count(at_risk)
+  inclusion: Watch or high risk levels
+  exclusion: On-track students
+  filter_semantics: Cohort filters
+  reporting_period: Filter window
+  data_source: '``student_standings``'
+  implementation:
+  - app.analytics.queries:cohort_overview
+  - app.analytics.metrics:assess_risk
+  version: 1.0.0
+  family_safe: false
+  privacy_note: null
+  kpi_card_labels:
+  - Needs attention
+  - Students needing support
+  known_limitations: null
+- id: staff.intervention_outcomes
+  label: Closed intervention outcomes
+  kind: placeholder
+  audience:
+  - admin
+  - teacher
+  chart_keys:
+  - staff.intervention_outcomes
+  summary: Closed outcomes table scaffold.
+  numerator_denominator: TBD
+  inclusion: —
+  exclusion: —
+  filter_semantics: Feature flag
+  reporting_period: —
+  data_source: Interventions domain (future)
+  implementation:
+  - app.analytics.charts:staff_intervention_outcomes
+  version: 1.0.0
+  family_safe: false
+  privacy_note: null
+  kpi_card_labels: []
+  known_limitations: null
+- id: staff.intervention_uncovered
+  label: Flagged pupils with no plan
+  kind: placeholder
+  audience:
+  - admin
+  - teacher
+  chart_keys:
+  - staff.intervention_uncovered
+  summary: Intervention coverage table (feature-flagged; scaffolded empty rows).
+  numerator_denominator: TBD when intervention data wired
+  inclusion: —
+  exclusion: —
+  filter_semantics: '``require_interventions_enabled``'
+  reporting_period: —
+  data_source: Interventions domain (future)
+  implementation:
+  - app.analytics.charts:staff_intervention_uncovered
+  version: 1.0.0
+  family_safe: false
+  privacy_note: null
+  kpi_card_labels: []
+  known_limitations: null
+- id: staff.interventions_open
+  label: Open intervention cases
+  kind: placeholder
+  audience:
+  - admin
+  - teacher
+  chart_keys:
+  - staff.interventions_open
+  summary: Open cases table scaffold.
+  numerator_denominator: TBD
+  inclusion: —
+  exclusion: —
+  filter_semantics: Feature flag
+  reporting_period: —
+  data_source: Interventions domain (future)
+  implementation:
+  - app.analytics.charts:staff_interventions_open
+  version: 1.0.0
+  family_safe: false
+  privacy_note: null
+  kpi_card_labels: []
+  known_limitations: null
+- id: teacher.effectiveness_summary
+  label: Results by teacher
+  kind: aggregate
+  audience:
+  - admin
+  chart_keys:
+  - school.teacher_effectiveness
+  summary: Weighted average and pass rate per teacher assignment groups.
+  numerator_denominator: SQL aggregates by teacher
+  inclusion: Scores linked via ``teacher_assignments``
+  exclusion: Unassigned assessments
+  filter_semantics: School scope
+  reporting_period: Filter window
+  data_source: '``teacher_effectiveness`` query'
+  implementation:
+  - app.analytics.queries:teacher_effectiveness
+  version: 1.0.0
+  family_safe: false
+  privacy_note: Staff operational metric; not for student/public leaderboards.
+  kpi_card_labels: []
+  known_limitations: null
+charts:
+- key: school.assessment_type_averages
+  title: Performance by assessment type
+  kind: chart
+  roles:
+  - admin
+  metric_ids: []
+  metrics_documented: false
+- key: school.at_risk
+  title: School-wide at-risk cohort
+  kind: table
+  roles:
+  - admin
+  metric_ids:
+  - risk.composite_status
+  - risk.high_risk_students
+  - risk.students_needing_support
+  metrics_documented: true
+- key: school.attendance_scatter
+  title: Attendance versus performance
+  kind: chart
+  roles:
+  - admin
+  metric_ids:
+  - attendance.student_rate
+  - perf.attendance_vs_performance
+  metrics_documented: true
+- key: school.distribution
+  title: School score distribution
+  kind: chart
+  roles:
+  - admin
+  metric_ids:
+  - grade.result_distribution
+  - perf.assessment_results_count
+  metrics_documented: true
+- key: school.grade_averages
+  title: Performance by grade
+  kind: chart
+  roles:
+  - admin
+  metric_ids:
+  - perf.assessment_pass_rate
+  - perf.cohort_weighted_average
+  metrics_documented: true
+- key: school.kpis
+  title: School summary
+  kind: kpi
+  roles:
+  - admin
+  metric_ids:
+  - attendance.student_rate
+  - perf.assessment_pass_rate
+  - perf.assessment_results_count
+  - perf.assessments_held
+  - perf.cohort_weighted_average
+  - perf.median_assessment_pct
+  - perf.students_assessed
+  - risk.high_risk_students
+  - risk.students_needing_support
+  metrics_documented: true
+- key: school.pass_rate
+  title: Pass rate
+  kind: chart
+  roles:
+  - admin
+  metric_ids:
+  - grade.mix_doughnut
+  - perf.assessment_pass_rate
+  metrics_documented: true
+- key: school.section_compare
+  title: Class comparison
+  kind: chart
+  roles:
+  - admin
+  metric_ids:
+  - perf.cohort_weighted_average
+  metrics_documented: true
+- key: school.section_leaderboard
+  title: Class leaderboard
+  kind: table
+  roles:
+  - admin
+  metric_ids:
+  - perf.assessment_pass_rate
+  - perf.cohort_weighted_average
+  metrics_documented: true
+- key: school.section_matrix
+  title: Class by subject heatmap
+  kind: heatmap
+  roles:
+  - admin
+  metric_ids:
+  - perf.matrix_cell_average
+  metrics_documented: true
+- key: school.subject_averages
+  title: Performance by subject
+  kind: chart
+  roles:
+  - admin
+  metric_ids:
+  - perf.assessment_pass_rate
+  - perf.cohort_weighted_average
+  metrics_documented: true
+- key: school.teacher_effectiveness
+  title: Results by teacher
+  kind: table
+  roles:
+  - admin
+  metric_ids:
+  - perf.assessment_pass_rate
+  - teacher.effectiveness_summary
+  metrics_documented: true
+- key: school.term_trend
+  title: Term trend by grade
+  kind: chart
+  roles:
+  - admin
+  metric_ids:
+  - perf.term_trajectory_slope
+  metrics_documented: true
+- key: section.assessment_averages
+  title: Average by assessment
+  kind: chart
+  roles:
+  - admin
+  - teacher
+  metric_ids: []
+  metrics_documented: false
+- key: section.at_risk
+  title: Students needing attention
+  kind: table
+  roles:
+  - admin
+  - teacher
+  metric_ids:
+  - risk.composite_status
+  - risk.students_needing_support
+  metrics_documented: true
+- key: section.attendance
+  title: Attendance against performance
+  kind: chart
+  roles:
+  - admin
+  - teacher
+  metric_ids:
+  - attendance.student_rate
+  metrics_documented: true
+- key: section.distribution
+  title: Score distribution
+  kind: chart
+  roles:
+  - admin
+  - teacher
+  metric_ids:
+  - grade.result_distribution
+  - perf.assessment_results_count
+  metrics_documented: true
+- key: section.grade_mix
+  title: Grade distribution
+  kind: chart
+  roles:
+  - admin
+  - teacher
+  metric_ids:
+  - grade.letter_band
+  - grade.mix_doughnut
+  metrics_documented: true
+- key: section.heatmap
+  title: Student by subject heatmap
+  kind: heatmap
+  roles:
+  - admin
+  - teacher
+  metric_ids:
+  - perf.matrix_cell_average
+  metrics_documented: true
+- key: section.kpis
+  title: Classroom summary
+  kind: kpi
+  roles:
+  - admin
+  - teacher
+  metric_ids:
+  - attendance.student_rate
+  - enrollment.class_students_count
+  - perf.assessment_pass_rate
+  - perf.assessment_results_count
+  - perf.cohort_weighted_average
+  - perf.median_assessment_pct
+  - perf.score_spread
+  - risk.high_risk_students
+  - risk.students_needing_support
+  metrics_documented: true
+- key: section.students_table
+  title: All students
+  kind: table
+  roles:
+  - admin
+  - teacher
+  metric_ids:
+  - risk.composite_status
+  metrics_documented: true
+- key: section.subject_averages
+  title: Average by subject
+  kind: chart
+  roles:
+  - admin
+  - teacher
+  metric_ids:
+  - perf.assessment_pass_rate
+  - perf.cohort_weighted_average
+  metrics_documented: true
+- key: section.toppers
+  title: Top performers
+  kind: table
+  roles:
+  - admin
+  - teacher
+  metric_ids: []
+  metrics_documented: false
+- key: staff.intervention_outcomes
+  title: Closed intervention outcomes
+  kind: table
+  roles:
+  - admin
+  - teacher
+  metric_ids:
+  - staff.intervention_outcomes
+  metrics_documented: true
+- key: staff.intervention_uncovered
+  title: Flagged pupils with no plan
+  kind: table
+  roles:
+  - admin
+  - teacher
+  metric_ids:
+  - staff.intervention_uncovered
+  metrics_documented: true
+- key: staff.interventions_open
+  title: Open intervention cases
+  kind: table
+  roles:
+  - admin
+  - teacher
+  metric_ids:
+  - staff.interventions_open
+  metrics_documented: true
+- key: student.assessment_table
+  title: Every assessment
+  kind: table
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+  metric_ids:
+  - grade.letter_band
+  metrics_documented: true
+- key: student.attendance
+  title: Attendance by month
+  kind: chart
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+  metric_ids:
+  - attendance.monthly_mix
+  - attendance.student_rate
+  metrics_documented: true
+- key: student.grade_mix
+  title: Grade spread across subjects
+  kind: chart
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+  metric_ids:
+  - grade.letter_band
+  - grade.mix_doughnut
+  metrics_documented: true
+- key: student.insight_summary
+  title: Progress summary
+  kind: insight_summary
+  roles:
+  - parent
+  - student
+  metric_ids: []
+  metrics_documented: false
+- key: student.insights
+  title: Performance insights
+  kind: insights
+  roles:
+  - admin
+  metric_ids: []
+  metrics_documented: false
+- key: student.kpis
+  title: Performance summary
+  kind: kpi
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+  metric_ids:
+  - attendance.student_rate
+  - grade.letter_band
+  - perf.class_rank
+  - perf.gap_to_class
+  - perf.student_overall_average
+  - perf.term_trajectory_slope
+  - risk.composite_status
+  metrics_documented: true
+- key: student.remarks
+  title: Teacher remarks
+  kind: timeline
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+  metric_ids: []
+  metrics_documented: false
+- key: student.subject_radar
+  title: Subject strength profile
+  kind: chart
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+  metric_ids:
+  - perf.subject_strength_radar
+  metrics_documented: true
+- key: student.subject_table
+  title: Subject breakdown
+  kind: table
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+  metric_ids:
+  - grade.letter_band
+  - perf.gap_to_class
+  - perf.student_overall_average
+  metrics_documented: true
+- key: student.subject_trend
+  title: Scores through the year
+  kind: chart
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+  metric_ids: []
+  metrics_documented: false
+- key: student.term_progress
+  title: Term on term progress
+  kind: chart
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+  metric_ids:
+  - perf.class_rank
+  - perf.term_trajectory_slope
+  metrics_documented: true
+- key: student.vs_class
+  title: You versus the class
+  kind: chart
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
+  metric_ids: []
+  metrics_documented: false
+chart_only_keys:
+- student.subject_trend
+- student.vs_class
+- student.assessment_table
+- student.remarks
+- student.insights
+- student.insight_summary
+- section.assessment_averages
+- section.students_table
+- section.toppers
+- school.assessment_type_averages
+validation_errors: []

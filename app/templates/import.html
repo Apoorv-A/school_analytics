@@ -17,25 +17,38 @@
 <section class="card" style="margin-top: 16px;">
   <h2>Import conflicts</h2>
   <p class="muted">ERP rows that disagree with analytics-owned scores, remarks, or attendance. Resolve before the next sync overwrites your choice.</p>
-  <table class="data">
+  <div class="table-scroll">
+  <table class="data data--wrap">
     <thead>
       <tr>
         <th>Entity</th>
         <th>External id</th>
-        <th>Fields</th>
-        <th>Local</th>
-        <th>Incoming (ERP)</th>
+        <th class="wrap">Fields</th>
+        <th class="wrap">Local</th>
+        <th class="wrap">Incoming (ERP)</th>
         <th>Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for item in pending_conflicts %}
       <tr data-conflict-id="{{ item.id }}">
-        <td>{{ item.entity_type.value }} #{{ item.entity_id }}</td>
+        <td class="nowrap">{{ item.entity_type.value }} #{{ item.entity_id }}</td>
         <td>{% if item.external_id %}<code>{{ item.external_id }}</code>{% else %}—{% endif %}</td>
-        <td>{{ item.field_names | join(", ") }}</td>
-        <td><code>{{ item.local_values }}</code></td>
-        <td><code>{{ item.incoming_values }}</code></td>
+        <td class="wrap">{{ item.field_names | join(", ") }}</td>
+        <td class="wrap">
+          <ul class="conflict-values">
+            {% for key, value in item.local_values.items() %}
+              <li><span class="conflict-values__key">{{ key }}</span> {{ value }}</li>
+            {% endfor %}
+          </ul>
+        </td>
+        <td class="wrap">
+          <ul class="conflict-values">
+            {% for key, value in item.incoming_values.items() %}
+              <li><span class="conflict-values__key">{{ key }}</span> {{ value }}</li>
+            {% endfor %}
+          </ul>
+        </td>
         <td class="conflict-actions">
           <button type="button" class="btn" data-action="conflict-keep-local">Keep local</button>
           <button type="button" class="btn btn--primary" data-action="conflict-accept-erp">Accept ERP</button>
@@ -58,6 +71,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 {% endif %}
 
@@ -65,7 +79,8 @@
 <section class="card" style="margin-top: 16px;">
   <h2>Assessment mapping queue</h2>
   <p class="muted">Unknown assessment codes from imports are held here until mapped to an existing assessment or rejected.</p>
-  <table class="data">
+  <div class="table-scroll">
+  <table class="data data--wrap">
     <thead>
       <tr>
         <th>External key</th>
@@ -79,7 +94,7 @@
       <tr data-queue-id="{{ item.id }}">
         <td><code>{{ item.external_key }}</code></td>
         <td>{{ item.source }}</td>
-        <td><code>{{ item.payload_snippet }}</code></td>
+        <td class="wrap"><code>{{ item.payload_snippet }}</code></td>
         <td>
           <input type="number" min="1" placeholder="Assessment ID" class="mapping-assessment-id" style="width:120px">
           <button type="button" class="btn btn--primary" data-action="map-assessment">Map</button>
@@ -89,6 +104,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 {% endif %}
 
@@ -96,7 +112,8 @@
 <section class="card" style="margin-top: 16px;">
   <h2>Recent import activity</h2>
   <p class="muted">Audit log for CSV validation and apply runs (Phase 2 foundation for ERP sync).</p>
-  <table class="data">
+  <div class="table-scroll">
+  <table class="data data--wrap">
     <thead>
       <tr>
         <th>When</th>
@@ -118,6 +135,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 {% endif %}
 

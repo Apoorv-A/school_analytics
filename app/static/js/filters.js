@@ -209,7 +209,9 @@
     let selectedLabel = hidden.value && input.value.trim() ? input.value.trim() : "";
 
     function isStudentDrillDownPage() {
-      return /^\/admin\/student\/[^/]+(\/[^/]+)?$/.test(window.location.pathname);
+      const path = window.location.pathname;
+      return /^\/admin\/student\/[^/]+(\/[^/]+)?$/.test(path)
+        || /^\/teacher\/student\/[^/]+$/.test(path);
     }
 
     function clearSelection() {
@@ -238,14 +240,20 @@
       input.setAttribute("aria-expanded", "false");
     }
 
-    function adminStudentTarget(studentId) {
+    function studentDrillDownTarget(studentId) {
       const path = window.location.pathname;
       if (path === "/admin/student") {
         return "/admin/student/" + studentId;
       }
-      const match = path.match(/^\/admin\/student\/[^/]+(\/[^/]+)?$/);
-      if (match) {
-        return "/admin/student/" + studentId + (match[1] || "");
+      const adminMatch = path.match(/^\/admin\/student\/[^/]+(\/[^/]+)?$/);
+      if (adminMatch) {
+        return "/admin/student/" + studentId + (adminMatch[1] || "");
+      }
+      if (path === "/teacher/lookup") {
+        return "/teacher/student/" + studentId;
+      }
+      if (/^\/teacher\/student\/[^/]+$/.test(path)) {
+        return "/teacher/student/" + studentId;
       }
       return null;
     }
@@ -255,7 +263,7 @@
       input.value = row.label;
       selectedLabel = row.label;
       clearResults();
-      const target = adminStudentTarget(row.id);
+      const target = studentDrillDownTarget(row.id);
       if (target) {
         const query = queryString();
         window.location.href = target + (query ? "?" + query : "");
@@ -298,11 +306,17 @@
       input.setAttribute("aria-expanded", "true");
     }
 
+    function searchUrl() {
+      const custom = box.getAttribute("data-student-search-url");
+      const base = custom && custom.trim() ? custom.trim() : "/api/students/search";
+      return base;
+    }
+
     function fetchStudents(query) {
-      return fetch(
-        "/api/students/search?q=" + encodeURIComponent(query) + "&limit=50",
-        { credentials: "same-origin" }
-      )
+      const url = searchUrl()
+        + "?q=" + encodeURIComponent(query)
+        + "&limit=50";
+      return fetch(url, { credentials: "same-origin" })
         .then(function (response) { return response.json(); })
         .then(function (data) { return data.results || []; });
     }

@@ -27,12 +27,14 @@ from app.routers import (
     import_conflicts,
     import_mapping,
     interventions,
+    metrics_glossary,
     parent,
     platform,
     remarks,
     student,
     students,
     teacher,
+    teacher_students,
 )
 from app.routers.auth import clear_session_cookie
 from app.templating import templates
@@ -107,6 +109,8 @@ app.include_router(admin.router)
 app.include_router(charts.router)
 app.include_router(exports.router)
 app.include_router(students.router)
+app.include_router(teacher_students.router)
+app.include_router(metrics_glossary.router)
 app.include_router(remarks.router)
 app.include_router(interventions.router)
 app.include_router(import_api.router)

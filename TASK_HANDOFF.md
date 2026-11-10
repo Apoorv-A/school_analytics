@@ -44,6 +44,17 @@ ruff check                    # clean
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+**Local dev — port 8000 / F01 metrics smoke:** If `uvicorn` logs `Address already in use`, an old process is still bound to `:8000` (often code **without** F01 `/api/metrics` + `/help/metrics`). Free the port, restart from this repo’s venv, then smoke:
+
+```bash
+lsof -nP -iTCP:8000 -sTCP:LISTEN    # note PID
+kill <PID>                          # or: kill -9 <PID> if stubborn
+source .venv/bin/activate           # use project venv with current tree
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+curl -s -o /dev/null -w "%{http_code}\n" -H "Host: sunrise.localhost" http://127.0.0.1:8000/api/metrics
+# expect 401 (route exists, auth required) — 404 means wrong process or unknown Host / unseeded tenant_domains
+```
+
 ## 5. Known problems or unresolved questions
 
 - **Local venv vs CI:** preflight installs `requirements.lock` (includes `fakeredis`). A partial `.venv` misses Redis test deps and fails 6 webhook/throttle tests; run `pip install -r requirements.lock` before `pytest`.
@@ -56,7 +67,17 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ## 6. Exact next step
 
-**ERP product work is explicitly deferred** (bidirectional sync, conflict preview UI, webhook/connector expansion — see item 4). Prioritize ops gates below.
+**Platform build** (uploaded `AI_HANDOFF_CURSOR_SCHOOL_PLATFORM.md`): Wave 1 **F05 teacher student search** is implemented — `GET /api/teacher/students/search`, `/teacher/lookup`, scoped combobox (no email in teacher JSON). Verify: `PYTHONPATH=. pytest -q tests/test_teacher_student_search.py`; teacher login → **Student lookup** → pick a class student.
+
+**F01 complete:** registry (`metric_registry.py`), `tests/test_metric_formulas.py` (12), glossary API + `/help/metrics` (`tests/test_metrics_glossary.py`, 11). Smoke: logged-in `GET /api/metrics`, `GET /help/metrics`. Regenerate: `PYTHONPATH=. python3 app/analytics/metric_registry.py`.
+
+**F01-04 done:** Metrics guide in all portal sidebars (`/help/metrics`); chart cards expose **About this chart** (`GET /api/charts/{key}/info`, `chart_info.js`). Tests: `tests/test_metrics_glossary.py`, `tests/test_chart_metric_info.py`. Verify: log in → sidebar **Metrics guide**; on any chart card click **ℹ** → panel + link to appendix.
+
+**F02 slice done (F02-01 + partial F02-02):** Principal term-trend card copy, term highlight on `school.term_trend`, `chartGuide` on all `school.*` charts, richer **About this chart** panel + mobile sheet CSS. Tests: `tests/test_f02_principal_charts.py`. Verify: Principal **School overview** → term trend subtitle; pick a term → subtitle filter note; **ℹ** on term trend → chart guide + metrics link.
+
+**Next product slice:** **F02 backlog** — chart guides for teacher/section/student charts; optional term-axis visual regression screenshots; **F03** doughnut taxonomy. Optional ledger: `docs/ai_delivery/` (**B00-01**). F05 polish: combobox on teacher overview, `section_id` on search.
+
+**ERP product work is explicitly deferred** (bidirectional sync, conflict preview UI, webhook/connector expansion — see item 5). Prioritize ops gates below.
 
 1. **Staging sign-off:** [stg-regression-signoff.md](docs/operations/stg-regression-signoff.md) — bump `tenants/sunrise/stg.yaml` to `image.tag: 1.3.0` (remote `main` still had `1.0.0` while `environments/stg/release.yaml` is `1.3.0`), ensure **stg** `KUBECONFIG`, push tag `sunrise_stg_v1.3.0`, green **deploy** + **qa-regression**.
 2. **Production cut:** [prod-deploy-runbook.md](docs/operations/prod-deploy-runbook.md) — set **prod** environment secret `KUBECONFIG` (manual); then push `sunrise_prod_v1.3.0` (no `promote.yml`). Prior prod tag run failed: missing `KUBECONFIG`.

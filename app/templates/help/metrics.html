@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Metrics guide{% endblock %}
+
+{% block topbar_actions %}
+  <form class="search-form" method="get" action="/help/metrics" role="search">
+    <label class="sr-only" for="metric-search">Search metrics</label>
+    <input
+      id="metric-search"
+      type="search"
+      name="q"
+      value="{{ query }}"
+      placeholder="Search by keyword"
+      maxlength="120"
+      autocomplete="off"
+    >
+    <button type="submit" class="btn btn--primary">Search</button>
+  </form>
+{% endblock %}
+
+{% block content %}
+  <p class="intro">
+    Plain-language definitions for KPIs and charts. Entries match the
+    <code>/api/metrics</code> glossary for your role.
+  </p>
+
+  {% if not metrics %}
+    <div class="empty-state">
+      <p>No metrics match your search. Try a shorter keyword.</p>
+    </div>
+  {% else %}
+    <div class="metric-guide">
+      {% for item in metrics %}
+        <article class="metric-guide__entry" id="metric-{{ item.id | replace('.', '-') }}">
+          <header>
+            <h2>{{ item.label }}</h2>
+            <p class="metric-guide__meta">
+              <span class="badge">v{{ item.version }}</span>
+              <span class="mono">{{ item.id }}</span>
+            </p>
+          </header>
+          <p>{{ item.summary }}</p>
+          <dl class="metric-guide__details">
+            <div><dt>How it is calculated</dt><dd>{{ item.computation }}</dd></div>
+            <div><dt>Included</dt><dd>{{ item.includes }}</dd></div>
+            <div><dt>Excluded</dt><dd>{{ item.excludes }}</dd></div>
+            <div><dt>Filters</dt><dd>{{ item.filterSemantics }}</dd></div>
+            <div><dt>Reporting period</dt><dd>{{ item.reportingPeriod }}</dd></div>
+            <div><dt>Data source</dt><dd>{{ item.dataSource }}</dd></div>
+            {% if item.limitations %}
+              <div><dt>Limitations</dt><dd>{{ item.limitations }}</dd></div>
+            {% endif %}
+            {% if item.privacyNote %}
+              <div><dt>Privacy</dt><dd>{{ item.privacyNote }}</dd></div>
+            {% endif %}
+            {% if item.implementation %}
+              <div>
+                <dt>Implementation</dt>
+                <dd>
+                  <ul>
+                    {% for ref in item.implementation %}
+                      <li><code>{{ ref }}</code></li>
+                    {% endfor %}
+                  </ul>
+                </dd>
+              </div>
+            {% endif %}
+          </dl>
+        </article>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endblock %}

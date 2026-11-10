@@ -66,6 +66,10 @@ def _fmt(value: float | None, suffix: str = "%") -> str:
     return "--" if value is None else f"{value:.1f}{suffix}"
 
 
+def _fmt_int(value: int | None) -> str:
+    return "--" if value is None else f"{value:,}"
+
+
 def _kpi(
     label: str,
     value: str,
@@ -527,7 +531,11 @@ def section_kpis(db: Session, filters: FilterParams, scope: AccessScope) -> dict
             f"Median {_fmt(overview['median'])}",
             metrics.performance_tone(overview["average"]),
         ),
-        _kpi("Pass rate", _fmt(overview["pass_rate"]), f"{overview['results']} results"),
+        _kpi(
+            "Pass rate",
+            _fmt(overview["pass_rate"]),
+            f"{_fmt_int(overview['results'])} graded results",
+        ),
         _kpi(
             "Students",
             str(overview["students"]),
@@ -722,7 +730,11 @@ def school_kpis(db: Session, filters: FilterParams, scope: AccessScope) -> dict:
             f"Median {_fmt(overview['median'])}",
             metrics.performance_tone(overview["average"]),
         ),
-        _kpi("Pass rate", _fmt(overview["pass_rate"]), f"{overview['results']} results"),
+        _kpi(
+            "Pass rate",
+            _fmt(overview["pass_rate"]),
+            f"{_fmt_int(overview['results'])} graded results",
+        ),
         _kpi(
             "Students assessed",
             str(overview["students"]),
@@ -798,11 +810,28 @@ def school_section_matrix(db: Session, filters: FilterParams, scope: AccessScope
 
 
 def school_term_trend(db: Session, filters: FilterParams, scope: AccessScope) -> dict:
-    # The trend is the point of this chart, so a single-term filter is ignored here.
+    # Longitudinal comparison: keep every term on the axis; term_id only highlights.
+    selected_term_id = filters.term_id
     year_filters = filters.model_copy(update={"term_id": None})
     matrix = queries.matrix_averages(db, year_filters, scope, "grade", "term")
     shaped = _matrix_to_series(matrix)
-    return {"kind": "line", **shaped, "meta": {"axis": "Term"}}
+    meta: dict[str, object] = {
+        "axis": "Term",
+        "xAxis": "Academic term",
+        "yAxis": "Average score (%)",
+        "unit": "%",
+    }
+    if selected_term_id is not None:
+        for index, column in enumerate(matrix["columns"]):
+            if column["id"] == selected_term_id:
+                meta["highlightedTermIndex"] = index
+                meta["highlightedTerm"] = column["label"]
+                meta["filterNote"] = (
+                    f"{column['label']} is highlighted on the full trajectory. "
+                    "Other charts still respect the term filter."
+                )
+                break
+    return {"kind": "line", **shaped, "meta": meta}
 
 
 def school_pass_rate(db: Session, filters: FilterParams, scope: AccessScope) -> dict:

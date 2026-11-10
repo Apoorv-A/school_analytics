@@ -159,6 +159,7 @@ class TestFeatureFlagRouteEnforcement:
         assert import_page.status_code == 200
         assert "Data import" in import_page.text
         assert "/admin/import" in import_page.text
+        assert 'class="import-report"' in import_page.text
 
     def test_bulk_import_route_404_when_disabled(self, admin_client, db):
         _set_feature_flags(db, {"bulkImport": False})

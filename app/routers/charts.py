@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.analytics import queries
 from app.analytics.charts import CHART_REGISTRY
+from app.analytics.metric_registry import serialize_chart_info_for_role
 from app.audit import (
     SENSITIVE_CHART_KEYS,
     SecurityAuditAction,
@@ -48,6 +49,28 @@ def list_charts(scope: AccessScope = Depends(get_access_scope)) -> dict:
             and chart_allowed_for_scope(definition.key, scope)
         ]
     }
+
+
+@router.get("/charts/{chart_key}/info")
+def get_chart_info(
+    chart_key: str = Path(min_length=1, max_length=64, pattern=r"^[a-z]+\.[a-z_]+$"),
+    scope: AccessScope = Depends(get_access_scope),
+) -> dict:
+    """Role-aware metric definitions for the chart info panel (F01-04)."""
+    definition = CHART_REGISTRY.get(chart_key)
+    if definition is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Unknown chart."
+        )
+    if scope.role not in definition.roles:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
+    if not chart_allowed_for_scope(chart_key, scope):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
+    guard_cohort_chart(chart_key, scope)
+    payload = serialize_chart_info_for_role(chart_key, scope.role)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
+    return payload
 
 
 @router.get("/charts/{chart_key}")

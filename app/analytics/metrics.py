@@ -244,6 +244,17 @@ def grade_counts(values: list[float | None]) -> list[tuple[str, int]]:
     return [(label, tally[label]) for label in order]
 
 
+def score_median(values: list[float]) -> float | None:
+    """Median of individual result percentages.
+
+    For an even number of results this is the mean of the two middle values, matching
+    ``statistics.median`` rather than picking only the upper middle entry.
+    """
+    if not values:
+        return None
+    return round(statistics.median(values), 2)
+
+
 def pass_rate(values: list[float | None], threshold: float | None = None) -> float | None:
     limit = active_settings().pass_percentage if threshold is None else threshold
     clean = [v for v in values if v is not None]

@@ -8,9 +8,20 @@
   <div class="card__head">
     <div>
       <h2 class="card__title">{{ card.title }}</h2>
-      <p class="card__subtitle" data-chart-subtitle>{{ card.subtitle | default("") }}</p>
+      <p
+        class="card__subtitle"
+        data-chart-subtitle
+        data-default-subtitle="{{ card.subtitle | default('') }}"
+      >{{ card.subtitle | default("") }}</p>
     </div>
     <div class="card__actions">
+      <button
+        type="button"
+        class="btn btn--sm btn--icon"
+        data-action="chart-info"
+        aria-label="About this chart"
+        title="About this chart"
+      >&#9432;</button>
       {% if exports_enabled | default(true) %}
       <button type="button" class="btn btn--sm" data-action="export" title="Download as CSV">CSV</button>
       {% endif %}
@@ -18,6 +29,8 @@
     </div>
   </div>
   <div class="card__body {{ 'card__body--flush' if card.flush else '' }}">
-    <div class="{{ card.holder | default('chart-holder') }}" data-chart-body></div>
+    {# "state" is a legacy holder key; do not reuse the loading-state .state class on the body. #}
+    {% set body_holder = 'content-holder' if card.holder == 'state' else (card.holder | default('chart-holder')) %}
+    <div class="{{ body_holder }}" data-chart-body></div>
   </div>
 </section>

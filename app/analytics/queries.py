@@ -1180,7 +1180,7 @@ def cohort_overview(
         "subjects": row.subjects or 0,
         "sections": row.sections or 0,
         "pass_rate": metrics.pass_rate(values),
-        "median": round(sorted(values)[len(values) // 2], 2) if values else None,
+        "median": metrics.score_median(values),
         "highest": max(values) if values else None,
         "lowest": min(values) if values else None,
         "spread": metrics.consistency(values),
@@ -1356,8 +1356,14 @@ def search_students(
     scope: AccessScope,
     query: str,
     limit: int = 20,
+    *,
+    include_contact_email: bool = True,
 ) -> list[dict[str, object]]:
-    """Browse or prefix-search by admission number, name, or email (admin only)."""
+    """Browse or prefix-search by admission number, name, or email.
+
+    When ``scope.student_ids`` is set (teachers, parents), results stay within that
+    allow-list. Omit contact email in teacher-facing responses unless policy allows it.
+    """
     scope.assert_identifiable()
     term = query.strip()
     stmt = (
@@ -1394,17 +1400,19 @@ def search_students(
     if scope.student_ids is not None:
         stmt = stmt.where(Student.id.in_(scope.student_ids or {-1}))
 
-    return [
-        {
+    rows: list[dict[str, object]] = []
+    for row in db.execute(stmt).all():
+        item: dict[str, object] = {
             "id": row.id,
             "full_name": row.full_name,
             "admission_no": row.admission_no,
             "section": f"{row.grade_name} - {row.section_name}",
-            "email": row.email,
             "label": f"{row.full_name} ({row.admission_no})",
         }
-        for row in db.execute(stmt).all()
-    ]
+        if include_contact_email:
+            item["email"] = row.email
+        rows.append(item)
+    return rows
 
 
 def _recent_assessment_drop(
