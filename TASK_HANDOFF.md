@@ -75,7 +75,11 @@ curl -s -o /dev/null -w "%{http_code}\n" -H "Host: sunrise.localhost" http://127
 
 **F02 slice done (F02-01 + partial F02-02):** Principal term-trend card copy, term highlight on `school.term_trend`, `chartGuide` on all `school.*` charts, richer **About this chart** panel + mobile sheet CSS. Tests: `tests/test_f02_principal_charts.py`. Verify: Principal **School overview** → term trend subtitle; pick a term → subtitle filter note; **ℹ** on term trend → chart guide + metrics link.
 
-**Next product slice:** **F02 backlog** — chart guides for teacher/section/student charts; optional term-axis visual regression screenshots; **F03** doughnut taxonomy. Optional ledger: `docs/ai_delivery/` (**B00-01**). F05 polish: combobox on teacher overview, `section_id` on search.
+**F02 backlog done:** `CHART_GUIDES` for all `section.*` (10) and `student.*` (13, incl. `student.attendance_status`); tests `tests/test_f02_portal_chart_guides.py`.
+
+**F03 slice done:** composition doughnuts (`student.attendance_status`, grade mix meta), pass-rate gauge legend/totals, shared renderer + `tests/test_f03_doughnut_charts.py` (9). Student attendance page shows status mix card.
+
+**Next product slice:** F03 remainder (intervention/leave mixes, responsive a11y gate); **F04** onboarding. Push `main` (2 commits ahead after F02/F03 commit). Optional: `docs/ai_delivery/` (**B00-01**).
 
 **ERP product work is explicitly deferred** (bidirectional sync, conflict preview UI, webhook/connector expansion — see item 5). Prioritize ops gates below.
 

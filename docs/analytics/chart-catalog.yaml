@@ -47,6 +47,14 @@ charts:
   - parent
   - student
   - teacher
+- key: student.attendance_status
+  title: Attendance status mix
+  kind: chart
+  roles:
+  - admin
+  - parent
+  - student
+  - teacher
 - key: student.term_progress
   title: Term on term progress
   kind: chart

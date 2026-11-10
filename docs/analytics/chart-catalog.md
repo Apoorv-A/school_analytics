@@ -10,6 +10,7 @@ Generated from `app/analytics/charts.py`. Do not edit by hand.
 | `student.subject_radar` | Subject strength profile | chart | admin, parent, student, teacher |
 | `student.grade_mix` | Grade spread across subjects | chart | admin, parent, student, teacher |
 | `student.attendance` | Attendance by month | chart | admin, parent, student, teacher |
+| `student.attendance_status` | Attendance status mix | chart | admin, parent, student, teacher |
 | `student.term_progress` | Term on term progress | chart | admin, parent, student, teacher |
 | `student.subject_table` | Subject breakdown | table | admin, parent, student, teacher |
 | `student.assessment_table` | Every assessment | table | admin, parent, student, teacher |

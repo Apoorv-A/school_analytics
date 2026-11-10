@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.analytics import metrics, queries
 from app.deps import AccessScope
-from app.models import Role, Student
+from app.models import AttendanceStatus, Role, Student
 from app.schemas import FilterParams
 from app.tenant.features import require_interventions_enabled, require_remarks_enabled
 
@@ -88,6 +88,43 @@ def _matrix_to_series(matrix: dict) -> dict:
             {"label": row["label"], "data": matrix["values"][index]}
             for index, row in enumerate(matrix["rows"])
         ],
+    }
+
+
+def _composition_doughnut(
+    *,
+    labels: list[str],
+    counts: list[int],
+    series_label: str,
+    unit: str,
+    center_label: str = "Total",
+    palette: str,
+    basis: str | None = None,
+) -> dict:
+    """Mutually exclusive segments that reconcile to ``total``."""
+    if len(labels) != len(counts):
+        raise ValueError("labels and counts must be the same length")
+    total = sum(counts)
+    segments: list[dict[str, object]] = []
+    for label, count in zip(labels, counts, strict=True):
+        if count <= 0:
+            continue
+        share = round(count / total * 100, 1) if total else 0.0
+        segments.append({"label": label, "count": count, "percent": share})
+    meta: dict[str, object] = {
+        "total": total,
+        "unit": unit,
+        "centerLabel": center_label,
+        "composition": segments,
+        "palette": palette,
+    }
+    if basis:
+        meta["basis"] = basis
+    return {
+        "kind": "doughnut",
+        "labels": [str(item["label"]) for item in segments],
+        "series": [{"label": series_label, "data": [int(item["count"]) for item in segments]}],
+        "meta": meta,
     }
 
 
@@ -293,14 +330,34 @@ def student_subject_radar(db: Session, filters: FilterParams, scope: AccessScope
 def student_grade_mix(db: Session, filters: FilterParams, scope: AccessScope) -> dict:
     student = _target_student(db, filters, scope)
     summaries = queries.student_subject_summaries(db, student, filters, scope)
-    counts = metrics.grade_counts([s.student_avg for s in summaries])
-    present = [(label, count) for label, count in counts if count > 0]
-    return {
-        "kind": "doughnut",
-        "labels": [label for label, _ in present],
-        "series": [{"label": "Subjects", "data": [count for _, count in present]}],
-        "meta": {"total": sum(count for _, count in present)},
-    }
+    band_counts = metrics.grade_counts([s.student_avg for s in summaries])
+    labels = [label for label, _ in band_counts]
+    counts = [count for _, count in band_counts]
+    return _composition_doughnut(
+        labels=labels,
+        counts=counts,
+        series_label="Subjects",
+        unit="subjects",
+        palette="grade",
+        basis="Letter grade per subject average in the current filters.",
+    )
+
+
+def student_attendance_status(db: Session, filters: FilterParams, scope: AccessScope) -> dict:
+    """Official daily attendance status counts for one learner (mutually exclusive)."""
+    student = _target_student(db, filters, scope)
+    records = queries.attendance_by_student(db, [student.id], filters, scope)
+    detail = records.get(student.id, {})
+    labels = [status.label for status in AttendanceStatus]
+    counts = [int(detail.get(status.value, 0) or 0) for status in AttendanceStatus]
+    return _composition_doughnut(
+        labels=labels,
+        counts=counts,
+        series_label="Days",
+        unit="days",
+        palette="attendance",
+        basis="Official daily attendance rows in the filtered period (not session roll call).",
+    )
 
 
 def student_attendance(db: Session, filters: FilterParams, scope: AccessScope) -> dict:
@@ -624,13 +681,17 @@ def section_heatmap(db: Session, filters: FilterParams, scope: AccessScope) -> d
 @classroom_chart
 def section_grade_mix(db: Session, filters: FilterParams, scope: AccessScope) -> dict:
     values = queries.score_values(db, filters, scope)
-    counts = [(label, count) for label, count in metrics.grade_counts(values) if count]
-    return {
-        "kind": "doughnut",
-        "labels": [label for label, _ in counts],
-        "series": [{"label": "Results", "data": [count for _, count in counts]}],
-        "meta": {"total": len(values)},
-    }
+    band_counts = metrics.grade_counts(values)
+    labels = [label for label, _ in band_counts]
+    counts = [count for _, count in band_counts]
+    return _composition_doughnut(
+        labels=labels,
+        counts=counts,
+        series_label="Results",
+        unit="results",
+        palette="grade",
+        basis="Letter grade per in-scope assessment result.",
+    )
 
 
 def _standings_table(
@@ -836,15 +897,43 @@ def school_term_trend(db: Session, filters: FilterParams, scope: AccessScope) ->
 
 def school_pass_rate(db: Session, filters: FilterParams, scope: AccessScope) -> dict:
     values = queries.score_values(db, filters, scope)
-    rate = metrics.pass_rate(values) or 0.0
+    clean = [value for value in values if value is not None]
+    threshold = metrics.active_settings().pass_percentage
+    if not clean:
+        return {
+            "kind": "gauge",
+            "labels": ["Passed", "Below pass mark"],
+            "series": [{"label": "Results", "data": [0, 0]}],
+            "meta": {
+                "value": None,
+                "threshold": threshold,
+                "total": 0,
+                "unit": "results",
+                "centerLabel": "Results",
+                "palette": "pass_rate",
+                "composition": [],
+                "empty": True,
+            },
+        }
+    passed = sum(1 for value in clean if value >= threshold)
+    below = len(clean) - passed
+    rate = metrics.pass_rate(clean) or 0.0
+    below_pct = round(100 - rate, 1)
     return {
         "kind": "gauge",
         "labels": ["Passed", "Below pass mark"],
-        "series": [{"label": "Results", "data": [rate, round(100 - rate, 1)]}],
+        "series": [{"label": "Results", "data": [rate, below_pct]}],
         "meta": {
             "value": rate,
-            "threshold": metrics.settings.pass_percentage,
-            "total": len(values),
+            "threshold": threshold,
+            "total": len(clean),
+            "unit": "results",
+            "centerLabel": "Pass rate",
+            "palette": "pass_rate",
+            "composition": [
+                {"label": "Passed", "count": passed, "percent": rate},
+                {"label": "Below pass mark", "count": below, "percent": below_pct},
+            ],
         },
     }
 
@@ -1068,6 +1157,12 @@ CHART_DEFS: tuple[ChartDef, ...] = (
     ChartDef("student.subject_radar", "Subject strength profile", ALL_ROLES, student_subject_radar),
     ChartDef("student.grade_mix", "Grade spread across subjects", ALL_ROLES, student_grade_mix),
     ChartDef("student.attendance", "Attendance by month", ALL_ROLES, student_attendance),
+    ChartDef(
+        "student.attendance_status",
+        "Attendance status mix",
+        ALL_ROLES,
+        student_attendance_status,
+    ),
     ChartDef("student.term_progress", "Term on term progress", ALL_ROLES, student_term_progress),
     ChartDef(
         "student.subject_table", "Subject breakdown", ALL_ROLES,

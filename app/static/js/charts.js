@@ -16,6 +16,23 @@
     "#4f46e5", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444",
     "#8b5cf6", "#14b8a6", "#ec4899", "#84cc16", "#f97316",
   ];
+  const GRADE_COLORS = {
+    A1: "#10b981",
+    A2: "#14b8a6",
+    B1: "#0ea5e9",
+    B2: "#4f46e5",
+    C1: "#8b5cf6",
+    C2: "#f59e0b",
+    D: "#f97316",
+    E: "#ef4444",
+  };
+  const ATTENDANCE_COLORS = {
+    Present: "#10b981",
+    Absent: "#ef4444",
+    Late: "#f59e0b",
+    Excused: "#0ea5e9",
+  };
+  const PASS_RATE_COLORS = ["#10b981", "#e2e8f0"];
   const GRID = "rgba(148, 163, 184, 0.18)";
   const TICK = "#64748b";
 
@@ -73,6 +90,90 @@
     return (series || []).some((s) =>
       (s.data || []).some((v) => (isNumber(v) ? true : v && isNumber(v.y)))
     );
+  }
+
+  function compositionTotal(payload) {
+    if (payload.meta && isNumber(payload.meta.total)) {
+      return payload.meta.total;
+    }
+    const data = payload.series && payload.series[0] ? payload.series[0].data : [];
+    return data.reduce(function (acc, value) {
+      return acc + (isNumber(value) ? value : 0);
+    }, 0);
+  }
+
+  function segmentColors(labels, paletteKey) {
+    if (paletteKey === "grade") {
+      return labels.map(function (label, index) {
+        return (GRADE_COLORS[label] || PALETTE[index % PALETTE.length]) + "dd";
+      });
+    }
+    if (paletteKey === "attendance") {
+      return labels.map(function (label, index) {
+        return (ATTENDANCE_COLORS[label] || PALETTE[index % PALETTE.length]) + "dd";
+      });
+    }
+    if (paletteKey === "pass_rate") {
+      return labels.map(function (_label, index) {
+        return (PASS_RATE_COLORS[index] || PALETTE[index % PALETTE.length]) + "dd";
+      });
+    }
+    return labels.map(function (_label, index) {
+      return PALETTE[index % PALETTE.length] + "dd";
+    });
+  }
+
+  function appendCompositionTable(holder, payload) {
+    const segments = payload.meta && payload.meta.composition;
+    if (!segments || !segments.length) return;
+    const unit = (payload.meta && payload.meta.unit) || "";
+    const table = el("table", "sr-only");
+    const caption = el("caption");
+    caption.textContent =
+      (payload.title || "Chart") +
+      (payload.meta && payload.meta.basis ? ": " + payload.meta.basis : "");
+    table.appendChild(caption);
+    const thead = el("thead");
+    const headRow = el("tr");
+    ["Category", "Count", "Share"].forEach(function (heading) {
+      const cell = el("th", null, heading);
+      headRow.appendChild(cell);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    const tbody = el("tbody");
+    segments.forEach(function (segment) {
+      const row = el("tr");
+      row.appendChild(el("td", null, segment.label));
+      const countText = segment.count + (unit ? " " + unit : "");
+      row.appendChild(el("td", null, countText));
+      row.appendChild(
+        el("td", null, isNumber(segment.percent) ? segment.percent.toFixed(1) + "%" : "--")
+      );
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    holder.appendChild(table);
+  }
+
+  function compositionLegendLabels(chart) {
+    const dataset = chart.data.datasets[0];
+    const labels = chart.data.labels || [];
+    const total = dataset.data.reduce(function (acc, value) {
+      return acc + (isNumber(value) ? value : 0);
+    }, 0);
+    return labels.map(function (label, index) {
+      const value = dataset.data[index];
+      const share = total ? ((value / total) * 100).toFixed(1) : "0.0";
+      return {
+        text: label + " · " + value + " (" + share + "%)",
+        fillStyle: dataset.backgroundColor[index],
+        strokeStyle: dataset.borderColor,
+        lineWidth: dataset.borderWidth,
+        hidden: chart.getDatasetMeta(0).data[index].hidden,
+        index: index,
+      };
+    });
   }
 
   /* --------------------------------------------------------- chart kinds */
@@ -225,9 +326,34 @@
   }
 
   function buildDoughnut(holder, payload) {
+    const total = compositionTotal(payload);
+    const wrapper = el("div", "composition-chart");
+    const canvasWrap = el("div", "composition-chart__canvas");
     const canvas = el("canvas");
-    holder.appendChild(canvas);
+    canvasWrap.appendChild(canvas);
+
+    const paletteKey = (payload.meta && payload.meta.palette) || "default";
+    const colors = segmentColors(payload.labels || [], paletteKey);
+
+    const centre = el("div", "composition-chart__center");
+    const stack = el("div", "composition-chart__center-stack");
+    stack.appendChild(
+      el("div", "composition-chart__center-value", total ? String(total) : "0")
+    );
+    const unit = (payload.meta && payload.meta.unit) || "";
+    const centreLabel = (payload.meta && payload.meta.centerLabel) || "Total";
+    stack.appendChild(el("div", "composition-chart__center-label", centreLabel));
+    if (unit) {
+      stack.appendChild(el("div", "muted", unit));
+    }
+    centre.appendChild(stack);
+    canvasWrap.appendChild(centre);
+    wrapper.appendChild(canvasWrap);
+    holder.appendChild(wrapper);
+    appendCompositionTable(holder, payload);
+
     const data = payload.series[0] ? payload.series[0].data : [];
+    const singleSegment = data.length === 1;
     return new Chart(canvas, {
       type: "doughnut",
       data: {
@@ -235,11 +361,9 @@
         datasets: [
           {
             data: data,
-            backgroundColor: payload.labels.map(function (_l, i) {
-              return PALETTE[i % PALETTE.length] + "dd";
-            }),
+            backgroundColor: colors,
             borderColor: "#fff",
-            borderWidth: 2,
+            borderWidth: singleSegment ? 0 : 2,
           },
         ],
       },
@@ -257,6 +381,7 @@
               padding: 11,
               color: TICK,
               font: { size: 11.5 },
+              generateLabels: compositionLegendLabels,
             },
           },
           tooltip: {
@@ -265,10 +390,12 @@
             cornerRadius: 8,
             callbacks: {
               label: function (ctx) {
-                const total = ctx.dataset.data.reduce(function (a, b) {
+                const sliceTotal = ctx.dataset.data.reduce(function (a, b) {
                   return a + (isNumber(b) ? b : 0);
                 }, 0);
-                const share = total ? ((ctx.parsed / total) * 100).toFixed(0) : "0";
+                const share = sliceTotal
+                  ? ((ctx.parsed / sliceTotal) * 100).toFixed(1)
+                  : "0.0";
                 return ctx.label + ": " + ctx.parsed + " (" + share + "%)";
               },
             },
@@ -279,37 +406,69 @@
   }
 
   function buildGauge(holder, payload) {
-    const wrapper = el("div");
-    wrapper.style.position = "relative";
-    wrapper.style.height = "100%";
+    const wrapper = el("div", "composition-chart composition-chart--gauge");
+    const canvasWrap = el("div", "composition-chart__canvas");
     const canvas = el("canvas");
-    wrapper.appendChild(canvas);
+    canvasWrap.appendChild(canvas);
 
-    const value = payload.meta && isNumber(payload.meta.value) ? payload.meta.value : 0;
-    const centre = el("div");
-    centre.style.position = "absolute";
-    centre.style.inset = "0";
-    centre.style.display = "grid";
-    centre.style.placeItems = "center";
-    centre.style.pointerEvents = "none";
-    const stack = el("div");
-    stack.style.textAlign = "center";
-    stack.style.marginTop = "18px";
-    const big = el("div", null, value.toFixed(1) + "%");
-    big.style.fontSize = "30px";
-    big.style.fontWeight = "700";
-    big.style.color = "#0f172a";
-    stack.appendChild(big);
+    const hasValue = payload.meta && isNumber(payload.meta.value);
+    const value = hasValue ? payload.meta.value : 0;
+    const total = compositionTotal(payload);
+    const threshold = payload.meta ? payload.meta.threshold : 33;
+    const paletteKey = (payload.meta && payload.meta.palette) || "pass_rate";
+    const colors = segmentColors(payload.labels || [], paletteKey);
+
+    const centre = el("div", "composition-chart__center");
+    const stack = el("div", "composition-chart__center-stack");
+    stack.appendChild(
+      el(
+        "div",
+        "composition-chart__center-value",
+        hasValue ? value.toFixed(1) + "%" : "--"
+      )
+    );
+    stack.appendChild(
+      el("div", "composition-chart__center-label", (payload.meta && payload.meta.centerLabel) || "Pass rate")
+    );
     stack.appendChild(
       el(
         "div",
         "muted",
-        "at or above " + (payload.meta ? payload.meta.threshold : 33) + "%"
+        total
+          ? total + " results at or above " + threshold + "%"
+          : "at or above " + threshold + "%"
       )
     );
     centre.appendChild(stack);
-    wrapper.appendChild(centre);
+    canvasWrap.appendChild(centre);
+    wrapper.appendChild(canvasWrap);
     holder.appendChild(wrapper);
+    appendCompositionTable(holder, payload);
+
+    const legend = el("ul", "composition-chart__legend composition-chart__legend--gauge");
+    (payload.meta && payload.meta.composition
+      ? payload.meta.composition
+      : (payload.labels || []).map(function (label, index) {
+          return {
+            label: label,
+            count: payload.series[0].data[index],
+            percent: payload.series[0].data[index],
+          };
+        })
+    ).forEach(function (segment, index) {
+      const item = el("li", "composition-chart__legend-item");
+      const swatch = el("span", "composition-chart__legend-swatch");
+      swatch.style.backgroundColor = colors[index] || PASS_RATE_COLORS[index];
+      item.appendChild(swatch);
+      const unit = (payload.meta && payload.meta.unit) || "results";
+      const countText = isNumber(segment.count) ? segment.count + " " + unit : "--";
+      const pctText = isNumber(segment.percent) ? segment.percent.toFixed(1) + "%" : "--";
+      item.appendChild(el("span", null, segment.label + " · " + countText + " (" + pctText + ")"));
+      legend.appendChild(item);
+    });
+    if (legend.childNodes.length) {
+      holder.appendChild(legend);
+    }
 
     return new Chart(canvas, {
       type: "doughnut",
@@ -318,7 +477,7 @@
         datasets: [
           {
             data: payload.series[0].data,
-            backgroundColor: ["#10b981dd", "#e2e8f0"],
+            backgroundColor: colors,
             borderWidth: 0,
           },
         ],
@@ -971,7 +1130,13 @@
         return;
       }
 
+      const compositionEmpty =
+        (payload.kind === "doughnut" || payload.kind === "gauge") &&
+        ((payload.meta && payload.meta.empty) ||
+          compositionTotal(payload) === 0 ||
+          !(payload.labels || []).length);
       const isEmpty =
+        compositionEmpty ||
         (payload.kind === "table" && !payload.rows.length) ||
         (payload.kind === "timeline" && !(payload.items || []).length) ||
         (payload.kind === "insights" && !payload.risk) ||

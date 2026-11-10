@@ -386,6 +386,29 @@ _METRIC_LIST: list[MetricDef] = [
         implementation=("app.analytics.queries:attendance_monthly",),
     ),
     MetricDef(
+        id="attendance.status_mix",
+        label="Attendance status mix",
+        kind=MetricKind.DERIVED,
+        audience=ALL_ROLES,
+        chart_keys=("student.attendance_status",),
+        kpi_card_labels=(),
+        summary=(
+            "Mutually exclusive counts of present, late, excused, and absent "
+            "official daily attendance days."
+        ),
+        numerator_denominator="count per status",
+        inclusion="Attendance rows in filter window",
+        exclusion="Months with zero recorded days omitted from chart",
+        filter_semantics="Student and date/term filters",
+        reporting_period="Filtered period",
+        data_source="``attendance`` (daily official)",
+        implementation=(
+            "app.analytics.charts:student_attendance_status",
+            "app.analytics.queries:attendance_by_student",
+        ),
+        privacy_note="Daily official attendance, not session roll call.",
+    ),
+    MetricDef(
         id="risk.composite_status",
         label="Student risk status",
         kind=MetricKind.CLASSIFICATION,
@@ -783,9 +806,233 @@ def _school_guides() -> dict[str, ChartGuide]:
     }
 
 
-CHART_GUIDES: dict[str, ChartGuide] = _school_guides()
+def _section_guides() -> dict[str, ChartGuide]:
+    shared_filters = (
+        "Academic year, term, subject, and assessment type filters narrow results. "
+        "Every classroom chart targets exactly one class—the teacher's default section "
+        "or an explicit class pick in the filter bar."
+    )
+    return {
+        "section.kpis": ChartGuide(
+            purpose="Headline class performance, spread, attendance, and follow-up counts.",
+            x_axis="—",
+            y_axis="KPI values (mostly %)",
+            aggregation="Weighted averages and counts for students in the selected class.",
+            filter_behavior=shared_filters,
+            caveats="At-risk counts follow the same rules as the school overview.",
+        ),
+        "section.distribution": ChartGuide(
+            purpose="How many graded results fall in each score band for this class.",
+            x_axis="Score band (%)",
+            y_axis="Number of results",
+            aggregation="Count of in-scope assessment results per band.",
+            filter_behavior=shared_filters,
+        ),
+        "section.assessment_averages": ChartGuide(
+            purpose="Compare papers within the class and spot high/low performers per test.",
+            x_axis="Assessment",
+            y_axis="Average score (%)",
+            aggregation="Weighted mean per assessment; meta may list top and bottom scores.",
+            filter_behavior=shared_filters,
+        ),
+        "section.subject_averages": ChartGuide(
+            purpose="See which subjects are strongest or weakest for the class.",
+            x_axis="Subject",
+            y_axis="Weighted average score (%)",
+            aggregation="Weighted mean of results per subject in the class.",
+            filter_behavior=shared_filters,
+        ),
+        "section.heatmap": ChartGuide(
+            purpose="Student-by-subject grid to spot individual weak spots quickly.",
+            x_axis="Subject",
+            y_axis="Student",
+            aggregation="Cell = weighted average % for that student and subject.",
+            filter_behavior=shared_filters,
+            caveats="Blank cells mean no graded result for that pairing under current filters.",
+        ),
+        "section.grade_mix": ChartGuide(
+            purpose="How many subjects (or results) sit in each grade bucket.",
+            x_axis="Grade label",
+            y_axis="Count",
+            aggregation="Grade assignment from percentage thresholds; counts per label.",
+            filter_behavior=shared_filters,
+        ),
+        "section.attendance": ChartGuide(
+            purpose="Relate each student's attendance rate to their weighted average.",
+            x_axis="Attendance rate (%)",
+            y_axis="Weighted average score (%)",
+            aggregation="One point per student in the class with both values in scope.",
+            filter_behavior=(
+                f"{shared_filters} Optional date filters limit the attendance window."
+            ),
+            caveats="Correlation is not causation.",
+        ),
+        "section.students_table": ChartGuide(
+            purpose="Sortable roster with averages, attendance, and trend signals.",
+            x_axis="Student row",
+            y_axis="Columns (scores, attendance, flags)",
+            aggregation="One row per student; values respect active filters.",
+            filter_behavior=shared_filters,
+        ),
+        "section.at_risk": ChartGuide(
+            purpose="Students flagged for follow-up in this class (rule-based, not a diagnosis).",
+            x_axis="Student",
+            y_axis="Status and reasons",
+            aggregation="School at-risk rules applied to the filtered class cohort.",
+            filter_behavior=shared_filters,
+            limitations="Confirm with human judgment; policy version affects flags.",
+        ),
+        "section.toppers": ChartGuide(
+            purpose="Highest-performing students in the class for the current filters.",
+            x_axis="Rank",
+            y_axis="Student and average %",
+            aggregation="Ordered by weighted average with tie handling.",
+            filter_behavior=shared_filters,
+        ),
+    }
 
-PRINCIPAL_CHART_KEYS: frozenset[str] = frozenset(CHART_GUIDES)
+
+def _student_guides() -> dict[str, ChartGuide]:
+    shared_filters = (
+        "Academic year, term, subject, and assessment type filters narrow which results "
+        "count. Views always reflect one student—the signed-in learner, a parent's "
+        "linked child, or a student selected in staff drill-down."
+    )
+    family_mode = (
+        "On parent and student portals, class rank and cohort benchmark series may be "
+        "hidden when the school uses self-comparison mode."
+    )
+    return {
+        "student.kpis": ChartGuide(
+            purpose="Snapshot of this learner's average, trend, attendance, and status.",
+            x_axis="—",
+            y_axis="KPI values (mostly %)",
+            aggregation="Weighted means and rule-based labels for the selected student.",
+            filter_behavior=shared_filters,
+            caveats=family_mode,
+        ),
+        "student.subject_trend": ChartGuide(
+            purpose=(
+                "How scores move through the year—per assessment when one subject is "
+                "picked, otherwise term averages by subject."
+            ),
+            x_axis="Assessment date or academic term (depends on subject filter).",
+            y_axis="Score (%)",
+            aggregation="Student line plus optional class average benchmark per point.",
+            filter_behavior=(
+                f"{shared_filters} Pick a subject to switch the axis to individual "
+                "assessments."
+            ),
+            caveats=family_mode,
+        ),
+        "student.vs_class": ChartGuide(
+            purpose="Subject-by-subject comparison to class average and class best.",
+            x_axis="Subject",
+            y_axis="Score (%)",
+            aggregation="One bar group per subject: student, class mean, class top.",
+            filter_behavior=shared_filters,
+            caveats=family_mode,
+            limitations="Hidden entirely on family portals in self-comparison mode.",
+        ),
+        "student.subject_radar": ChartGuide(
+            purpose="Relative strength across subjects on one radial chart.",
+            x_axis="Subject (spokes)",
+            y_axis="Average score (%)",
+            aggregation="Subject averages for the student vs optional class average ring.",
+            filter_behavior=shared_filters,
+            caveats=family_mode,
+        ),
+        "student.grade_mix": ChartGuide(
+            purpose="How this student's subject averages distribute across grade labels.",
+            x_axis="Grade label",
+            y_axis="Number of subjects",
+            aggregation="Grade bucket counts from subject-level averages.",
+            filter_behavior=shared_filters,
+        ),
+        "student.attendance": ChartGuide(
+            purpose="Month-by-month attendance mix for the learner.",
+            x_axis="Calendar month",
+            y_axis="Days by status",
+            aggregation="Stacked counts (present, late, excused, absent) per month.",
+            filter_behavior=(
+                f"{shared_filters} Date filters can narrow which months appear."
+            ),
+        ),
+        "student.attendance_status": ChartGuide(
+            purpose="Share of official school days in each attendance status for this learner.",
+            x_axis="Status category",
+            y_axis="Day count",
+            aggregation=(
+                "Mutually exclusive counts of present, late, excused, and absent days "
+                "from daily official attendance in the filtered period."
+            ),
+            filter_behavior=shared_filters,
+            limitations="Daily official attendance only — not per-period session roll call.",
+        ),
+        "student.term_progress": ChartGuide(
+            purpose="Weighted average each term against the class trajectory.",
+            x_axis="Academic term",
+            y_axis="Weighted average score (%)",
+            aggregation="Per-term student average with optional class average bar.",
+            filter_behavior=shared_filters,
+            caveats=family_mode,
+        ),
+        "student.subject_table": ChartGuide(
+            purpose="Detailed per-subject metrics including comparison and consistency.",
+            x_axis="Subject row",
+            y_axis="Columns (average, rank, trend, etc.)",
+            aggregation="One row per subject under active filters.",
+            filter_behavior=shared_filters,
+            caveats=family_mode,
+        ),
+        "student.assessment_table": ChartGuide(
+            purpose="Every graded assessment in scope, sortable by column.",
+            x_axis="Assessment row",
+            y_axis="Marks, percentage, class comparison",
+            aggregation="One row per assessment result; respects date and type filters.",
+            filter_behavior=shared_filters,
+            caveats=family_mode,
+        ),
+        "student.remarks": ChartGuide(
+            purpose="Chronological teacher remarks for the student.",
+            x_axis="Date",
+            y_axis="Remark text and context",
+            aggregation="Entries from enabled remark feature, filtered by term when set.",
+            filter_behavior=shared_filters,
+            limitations="Requires remarks feature; content is staff-authored narrative.",
+        ),
+        "student.insights": ChartGuide(
+            purpose="Staff-facing evidence summary with suggested follow-up actions.",
+            x_axis="—",
+            y_axis="Insight blocks",
+            aggregation="Generated from performance, attendance, and trend signals.",
+            filter_behavior=shared_filters,
+            limitations="Administrators only; not shown on family portals.",
+        ),
+        "student.insight_summary": ChartGuide(
+            purpose="Family-friendly progress snapshot without staff-only detail.",
+            x_axis="—",
+            y_axis="Summary sections",
+            aggregation="Sanitized highlights from the same signals as full insights.",
+            filter_behavior=shared_filters,
+            limitations="Parent and student portals only; excludes class benchmarks in self mode.",
+        ),
+    }
+
+
+_SCHOOL_CHART_GUIDES = _school_guides()
+_SECTION_CHART_GUIDES = _section_guides()
+_STUDENT_CHART_GUIDES = _student_guides()
+
+CHART_GUIDES: dict[str, ChartGuide] = {
+    **_SCHOOL_CHART_GUIDES,
+    **_SECTION_CHART_GUIDES,
+    **_STUDENT_CHART_GUIDES,
+}
+
+PRINCIPAL_CHART_KEYS: frozenset[str] = frozenset(_SCHOOL_CHART_GUIDES)
+SECTION_CHART_KEYS: frozenset[str] = frozenset(_SECTION_CHART_GUIDES)
+STUDENT_CHART_KEYS: frozenset[str] = frozenset(_STUDENT_CHART_GUIDES)
 
 
 def serialize_chart_guide(chart_key: str) -> dict[str, str] | None:
