@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<div
+  class="remark-composer"
+  id="remark-composer"
+  data-teacher-name="{{ current_user.full_name | e }}"
+  data-categories='{{ remark_categories | tojson }}'
+>
+  <div class="remark-composer__grid">
+    <section class="card">
+      <h2>Write a remark</h2>
+      <p class="muted">Pick a student above, then compose. Drafts stay staff-only until you publish.</p>
+      <form id="remark-compose-form" class="remark-composer__form">
+        <label>
+          Category
+          <select name="category" id="remark-category">
+            {% for value, label in remark_categories %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Remark
+          <textarea name="body" id="remark-body" rows="8" maxlength="4000" required placeholder="What guardians should read about this student…"></textarea>
+        </label>
+        <div class="filters__actions remark-composer__actions">
+          <button type="button" class="btn" id="remark-save-draft" data-action="draft">Save draft</button>
+          <button type="button" class="btn btn--primary" id="remark-publish" data-action="publish">Save &amp; publish</button>
+        </div>
+      </form>
+      <p id="remark-status" class="alert" hidden role="status"></p>
+      <div id="remark-follow-up" class="remark-composer__follow-up" hidden>
+        <button type="button" class="btn btn--primary" id="remark-publish-saved">Publish saved draft</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Family view preview</h2>
+      <p class="muted">How this remark appears on the parent and student remarks timeline after publishing.</p>
+      <p id="remark-preview-note" class="muted">Select a student and enter text to preview.</p>
+      <div id="remark-family-preview" class="timeline" aria-live="polite"></div>
+      <div id="remark-published-context" class="remark-composer__published" hidden>
+        <h3>Already published for this student</h3>
+        <p class="muted">Recent published remarks (family view).</p>
+        <div id="remark-published-list" class="timeline"></div>
+      </div>
+    </section>
+  </div>
+</div>
+<script src="/static/js/remarks_composer.js" defer></script>
+{% endblock %}

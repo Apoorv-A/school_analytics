@@ -28,6 +28,7 @@ RLS_TENANT_TABLES: tuple[str, ...] = (
     "scores",
     "attendance",
     "remarks",
+    "guardian_remark_reads",
     "import_runs",
     "import_sync_state",
     "import_mapping_queue",

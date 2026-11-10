@@ -20,6 +20,7 @@ from app.schemas import FilterOptions, FilterParams
 from app.templating import templates
 from app.tenant.context import require_tenant_context
 from app.tenant.settings import TenantSettings
+from app.parent_remark_notices import merge_parent_remark_notices_shell
 from app.welcome import merge_welcome_into_context
 
 PORTAL_HOME: dict[Role, str] = {
@@ -84,6 +85,7 @@ NAV: dict[Role, list[dict]] = {
                 {"href": "/teacher/subjects", "label": "Subjects", "icon": "\u25c6"},
                 {"href": "/teacher/students", "label": "Students", "icon": "\u25cf"},
                 {"href": "/teacher/lookup", "label": "Student lookup", "icon": "\u2315"},
+                {"href": "/teacher/remarks", "label": "Write remark", "icon": "\u201c"},
                 {"href": "/teacher/attention", "label": "Needs attention", "icon": "\u26a0"},
                 {"href": "/teacher/interventions", "label": "Interventions", "icon": "\u2691"},
                 {"href": "/teacher/attendance", "label": "Attendance", "icon": "\u2713"},
@@ -128,7 +130,7 @@ def portal_nav(role: Role, settings: TenantSettings) -> list[dict]:
             if href in ("/admin/interventions", "/teacher/interventions"):
                 if not settings.interventions_enabled:
                     continue
-            if href in ("/parent/remarks", "/student/remarks"):
+            if href in ("/parent/remarks", "/student/remarks", "/teacher/remarks"):
                 if not settings.remarks_enabled:
                     continue
             items.append(item)
@@ -279,6 +281,12 @@ def render_dashboard(
     if extra:
         context.update(extra)
     merge_welcome_into_context(request, context, scope.user)
+    merge_parent_remark_notices_shell(
+        context,
+        scope,
+        remarks_enabled=tenant_ctx.settings.remarks_enabled,
+        parent_portal_enabled=tenant_ctx.settings.parent_portal_enabled,
+    )
     return templates.TemplateResponse(request, template, context)
 
 

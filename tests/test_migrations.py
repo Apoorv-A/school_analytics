@@ -20,7 +20,7 @@ from app.config import PROJECT_ROOT
 from app.db import Base, check_db_migrations_at_head
 
 BASELINE_PATH = PROJECT_ROOT / "alembic/versions/001_baseline_multi_tenant.py"
-HEAD_REVISION = "017_remark_visibility"
+HEAD_REVISION = "018_guardian_remark_reads"
 
 CORE_TABLES = frozenset(
     {
@@ -52,6 +52,7 @@ HEAD_TABLES = CORE_TABLES | {
     "intervention_events",
     "action_tasks",
     "parental_consent_records",
+    "guardian_remark_reads",
     "password_reset_tokens",
     "security_audit_events",
     "import_mapping_queue",
@@ -252,7 +253,8 @@ class TestMigrationChain:
             tables = _table_names(engine)
             assert "import_conflicts" in tables
             remark_cols = _column_names(engine, "remarks")
-            assert "visibility" not in remark_cols
+            assert "visibility" in remark_cols
+            assert "guardian_remark_reads" not in tables
             assert "import_sync_state" in tables
             assert "parental_consent_records" in tables
             assert "action_tasks" in tables
@@ -261,6 +263,6 @@ class TestMigrationChain:
             revision = engine.connect().execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-            assert revision == "016_import_conflicts"
+            assert revision == "017_remark_visibility"
         finally:
             engine.dispose()

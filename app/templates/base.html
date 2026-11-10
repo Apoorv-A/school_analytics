@@ -56,6 +56,19 @@
       </div>
       <div class="topbar__actions">
         {% block topbar_actions %}{% endblock %}
+        {% if parent_remark_notices and parent_remark_notices.enabled %}
+        <button
+          type="button"
+          class="btn remark-notices-trigger"
+          data-remark-notices-open
+          aria-haspopup="dialog"
+          aria-controls="parent-remark-notices"
+        >
+          Remarks
+          <span class="remark-notices-badge" data-remark-notices-badge hidden aria-hidden="true"></span>
+          <span class="sr-only" data-remark-notices-sr></span>
+        </button>
+        {% endif %}
         <button type="button" class="btn" data-action="print">Print / PDF</button>
       </div>
     </header>
@@ -82,6 +95,10 @@
 {% include "components/_welcome.html" %}
 {% if welcome and welcome.show %}
 <script src="/static/js/welcome.js" defer></script>
+{% endif %}
+{% if parent_remark_notices and parent_remark_notices.enabled %}
+{% include "components/_parent_remark_notices.html" %}
+<script src="/static/js/parent_remark_notices.js" defer></script>
 {% endif %}
 </body>
 </html>

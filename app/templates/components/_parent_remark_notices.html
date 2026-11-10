@@ -1,0 +1,22 @@
+<dialog
+  id="parent-remark-notices"
+  class="remark-notices-drawer no-print"
+  aria-labelledby="remark-notices-title"
+>
+  <div class="remark-notices-drawer__panel">
+    <header class="remark-notices-drawer__head">
+      <div>
+        <h2 id="remark-notices-title" class="remark-notices-drawer__title">New teacher remarks</h2>
+        <p class="remark-notices-drawer__lead">Published notes about your linked children.</p>
+      </div>
+      <button type="button" class="btn" data-remark-notices-close aria-label="Close">Close</button>
+    </header>
+    <div class="remark-notices-drawer__body" data-remark-notices-list role="list">
+      <p class="remark-notices-drawer__empty" data-remark-notices-empty hidden>No new remarks.</p>
+    </div>
+    <footer class="remark-notices-drawer__foot">
+      <button type="button" class="btn" data-remark-notices-mark-all>Mark all as read</button>
+      <a class="btn btn--primary" href="/parent/remarks">Open all remarks</a>
+    </footer>
+  </div>
+</dialog>

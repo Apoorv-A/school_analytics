@@ -72,8 +72,8 @@ def db():
 
 
 @pytest.fixture(autouse=True)
-def _restore_sunrise_family_comparison_mode(db):
-    """Tests may switch tenant portal policy; reset so later suites stay deterministic."""
+def _restore_sunrise_tenant_policy(db):
+    """Tests may switch portal policy or feature flags; reset so later suites stay deterministic."""
     yield
     from sqlalchemy.orm.attributes import flag_modified
 
@@ -81,10 +81,18 @@ def _restore_sunrise_family_comparison_mode(db):
 
     tenant = db.scalars(select(Tenant).where(Tenant.key == "sunrise")).one()
     settings = dict(tenant.settings_json or {})
+    changed = False
     portal = dict(settings.get("portal") or {})
     if portal.get("familyComparisonMode", "self") != "self":
         portal["familyComparisonMode"] = "self"
         settings["portal"] = portal
+        changed = True
+    features = dict(settings.get("features") or {})
+    if features.get("interventions"):
+        features["interventions"] = False
+        settings["features"] = features
+        changed = True
+    if changed:
         tenant.settings_json = settings
         flag_modified(tenant, "settings_json")
         db.commit()

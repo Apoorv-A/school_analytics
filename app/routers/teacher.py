@@ -9,13 +9,13 @@ from sqlalchemy.orm import Session
 from app.analytics.queries import filter_options
 from app.db import get_db
 from app.deps import AccessScope, get_access_scope, require_roles
-from app.models import Role, School, Student
+from app.models import RemarkCategory, Role, School, Student
 from app.portals import PORTAL_HOME, portal_nav, render_dashboard, student_subtitle
 from app.routers.student_views import staff_student_overview_cards
 from app.schemas import FilterParams, filter_params
 from app.templating import templates
 from app.tenant.context import require_tenant_context
-from app.tenant.features import require_interventions_enabled
+from app.tenant.features import require_interventions_enabled, require_remarks_enabled
 
 router = APIRouter(
     prefix="/teacher",
@@ -189,6 +189,31 @@ def _render(
         cards=page["cards"],
         # Defaulted above when the teacher has not picked a class.
         pinned=["section_id"],
+    )
+
+
+@router.get("/remarks")
+def remarks_composer(
+    request: Request,
+    db: Session = Depends(get_db),
+    scope: AccessScope = Depends(get_access_scope),
+    filters: FilterParams = Depends(filter_params),
+) -> Response:
+    """Compose teacher remarks with a family-view preview before publishing."""
+    require_remarks_enabled()
+    categories = [(c.value, c.label) for c in RemarkCategory]
+    return render_dashboard(
+        request,
+        db,
+        scope,
+        filters,
+        title="Write remark",
+        subtitle="Draft for staff or publish to linked guardians",
+        active_nav="/teacher/remarks",
+        visible_filters=["academic_year", "student", "term", "subject"],
+        cards=[],
+        template="remarks_composer.html",
+        extra={"remark_categories": categories},
     )
 
 

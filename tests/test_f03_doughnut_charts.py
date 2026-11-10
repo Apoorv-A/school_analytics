@@ -131,10 +131,22 @@ def _enable_interventions(db, *, tenant_key: str = "sunrise") -> None:
     db.commit()
 
 
+def _disable_interventions(db, *, tenant_key: str = "sunrise") -> None:
+    tenant = db.scalars(select(Tenant).where(Tenant.key == tenant_key)).one()
+    settings = dict(tenant.settings_json or {})
+    features = dict(settings.get("features") or {})
+    features["interventions"] = False
+    settings["features"] = features
+    tenant.settings_json = settings
+    flag_modified(tenant, "settings_json")
+    db.commit()
+
+
 @pytest.fixture
 def interventions_enabled(db):
     _enable_interventions(db)
     yield
+    _disable_interventions(db)
 
 
 def test_staff_intervention_status_composition_reconciles(
@@ -144,26 +156,28 @@ def test_staff_intervention_status_composition_reconciles(
 
     student = _at_risk_student_without_case(db)
     tenant = db.scalars(select(Tenant).where(Tenant.key == "sunrise")).one()
-    db.add(
-        InterventionCase(
-            tenant_id=tenant.id,
-            student_id=student.id,
-            signal_source="test",
-            reason_summary="F03 status mix",
-            priority=InterventionPriority.MEDIUM,
-            status=InterventionStatus.OPEN,
-        )
+    case = InterventionCase(
+        tenant_id=tenant.id,
+        student_id=student.id,
+        signal_source="test",
+        reason_summary="F03 status mix",
+        priority=InterventionPriority.MEDIUM,
+        status=InterventionStatus.OPEN,
     )
+    db.add(case)
     db.commit()
-
-    payload = admin_client.get(
-        "/api/charts/staff.intervention_status",
-        headers=DEFAULT_HEADERS,
-    ).json()
-    assert payload["kind"] == "doughnut"
-    assert "composition" in payload["meta"]
-    if payload["meta"]["total"]:
-        _assert_composition_reconciles(payload)
+    try:
+        payload = admin_client.get(
+            "/api/charts/staff.intervention_status",
+            headers=DEFAULT_HEADERS,
+        ).json()
+        assert payload["kind"] == "doughnut"
+        assert "composition" in payload["meta"]
+        if payload["meta"]["total"]:
+            _assert_composition_reconciles(payload)
+    finally:
+        db.delete(case)
+        db.commit()
 
 
 def test_chart_info_staff_intervention_status_includes_guide(

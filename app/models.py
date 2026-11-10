@@ -604,6 +604,33 @@ class Remark(Base):
     subject: Mapped[Subject | None] = relationship()
 
 
+class GuardianRemarkRead(Base):
+    """When a guardian has seen a published remark in-app (F07)."""
+
+    __tablename__ = "guardian_remark_reads"
+    __table_args__ = (
+        UniqueConstraint(
+            "guardian_user_id",
+            "remark_id",
+            name="uq_guardian_remark_reads_guardian_remark",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    guardian_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    remark_id: Mapped[int] = mapped_column(
+        ForeignKey("remarks.id", ondelete="CASCADE"), index=True
+    )
+    read_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+
+
 class InterventionStatus(enum.StrEnum):
     OPEN = "open"
     IN_PROGRESS = "in_progress"

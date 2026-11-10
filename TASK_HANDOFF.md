@@ -83,13 +83,17 @@ curl -s -o /dev/null -w "%{http_code}\n" -H "Host: sunrise.localhost" http://127
 
 **F06 slice done (MVP):** Draft vs published on `remarks` (Alembic `017_remark_visibility`); teacher `POST /api/remarks` with `publish`, `POST /api/remarks/{id}/publish`; family `student.remarks` + concern counts published-only; `remark.published` audit. Seeded/imported remarks backfilled as published. Tests: `tests/test_f06_remarks_publication.py`. Verify: teacher draft → parent chart empty for that body; `publish: true` → parent sees item, no `visibility` in family JSON.
 
-**Next product slice:** **F06-03** teacher composer/parent published view polish; **F07** parent unread notices (not started); optional `docs/ai_delivery/` (**B00-01**); **F08** leave mix when prioritized.
+**F06-03 done:** Teacher **Write remark** page (`/teacher/remarks`): student/term/subject filters, category + body, family timeline preview, save draft / save & publish / publish saved draft (`remarks_composer.html`, `remarks_composer.js`). Nav item gated by `remarks_enabled`. Tests: `tests/test_f06_remarks_composer.py` (5). Verify: teacher login → **Write remark** → pick student → preview updates → **Save draft** (parent chart unchanged) → **Publish saved draft** or **Save & publish** → parent **Teacher remarks** shows entry.
+
+**F07 slice done (MVP):** Per-guardian read state (`guardian_remark_reads`, Alembic `018_guardian_remark_reads`); parent-only `/api/parent/remark-notices/*`; topbar **Remarks** badge + drawer (`parent_remark_notices.js`, non-blocking `<dialog>`). Published-only unread; no push. Tests: `tests/test_f07_parent_remark_notices.py` (5). Verify: teacher publish on linked child → parent badge → drawer preview → mark read clears count; teacher/student APIs 403.
+
+**Next product slice:** optional `docs/ai_delivery/` (**B00-01**); **F08** leave mix when prioritized.
 
 **ERP product work is explicitly deferred** (bidirectional sync, conflict preview UI, webhook/connector expansion — see item 5). Prioritize ops gates below.
 
 1. **Staging sign-off:** [stg-regression-signoff.md](docs/operations/stg-regression-signoff.md) — bump `tenants/sunrise/stg.yaml` to `image.tag: 1.3.0` (remote `main` still had `1.0.0` while `environments/stg/release.yaml` is `1.3.0`), ensure **stg** `KUBECONFIG`, push tag `sunrise_stg_v1.3.0`, green **deploy** + **qa-regression**.
 2. **Production cut:** [prod-deploy-runbook.md](docs/operations/prod-deploy-runbook.md) — set **prod** environment secret `KUBECONFIG` (manual); then push `sunrise_prod_v1.3.0` (no `promote.yml`). Prior prod tag run failed: missing `KUBECONFIG`.
-3. **CI (app `main`):** **postgres-integration** uses `HEAD_REVISION` (`017_remark_visibility`); re-run full CI on push.
+3. **CI (app `main`):** **postgres-integration** uses `HEAD_REVISION` (`018_guardian_remark_reads`); re-run full CI on push.
 4. **Deferred product (ERP):** bidirectional ERP sync; validate-only conflict preview before apply — `docs/product/phase2.md`.
 5. **Deferred schema:** Alembic cleanup to drop unused `parental_consent_records` from `014`.
 6. **v1.3.0 image** — `ghcr.io/apoorv-a/school-analytics:1.3.0` published. Optional: `CONFIG_REPO_PAT` + restore `tests/test_config_schema.py` in preflight.

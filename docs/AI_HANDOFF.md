@@ -65,6 +65,8 @@ Analytics is a **school-provided service** to families under the school’s poli
 | `app/audit.py` | Append-only security audit events (`security_audit_events` table) |
 | `app/routers/students.py` | Admin student search (`GET /api/students/search`) |
 | `app/routers/remarks.py` | Teacher remarks: `POST /api/remarks` (draft or `publish`), `POST /api/remarks/{id}/publish`; family charts see published only |
+| `app/routers/parent_remark_notices.py` | F07 parent unread published remarks: `GET /api/parent/remark-notices/count`, `GET /api/parent/remark-notices`, `POST /api/parent/remark-notices/mark-read` |
+| `app/parent_remark_notices.py` | Unread query + mark-read logic; `guardian_remark_reads` table (`018_guardian_remark_reads`) |
 | `app/db.py` | SQLAlchemy engine; SQLite `NullPool` locally, pooled Postgres in production |
 | `app/deps.py` | Auth + `AccessScope` |
 | `app/analytics/` | Metrics, scoped queries, chart registry |
