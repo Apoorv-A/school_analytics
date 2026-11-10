@@ -46,6 +46,7 @@ from app.models import (
     Term,
     User,
 )
+from app.remark_terms import inferred_remark_term_id_expr, remark_placed_at
 from app.schemas import FilterOption, FilterOptions, FilterParams
 
 MONTH_LABELS = [
@@ -686,14 +687,22 @@ def _remark_filter_conditions(
             # `created_at` / `published_at` are timestamps, so the upper bound is the
             # day *after* the year ends. Comparing against `end_date` itself coerces
             # it to midnight and drops everything written during that final day.
-            placed_at = func.coalesce(Remark.published_at, Remark.created_at)
+            placed_at = remark_placed_at()
+            inferred_in_year = inferred_remark_term_id_expr().in_(
+                select(Term.id).where(Term.academic_year_id == filters.academic_year_id)
+            )
             conditions.append(
                 or_(
                     in_year_terms,
                     and_(
                         Remark.term_id.is_(None),
-                        placed_at >= start,
-                        placed_at < end + timedelta(days=1),
+                        or_(
+                            and_(
+                                placed_at >= start,
+                                placed_at < end + timedelta(days=1),
+                            ),
+                            inferred_in_year,
+                        ),
                     ),
                 )
             )
